@@ -11,16 +11,24 @@ import sys
 import zlib
 
 
-def write_file(path, content):
+# return the content of a file
+def read_file(path, mode='rb'):
+    with open(path, mode) as f:
+        return f.read()
+
+
+# write a file, creating intermediate directories if necessary
+def write_file(path, content, mode='wb'):
     dirname, basename = os.path.split(path)
 
     if dirname and not os.path.exists(dirname):
         os.makedirs(dirname)
 
-    with open(path, 'wb') as f:
+    with open(path, mode) as f:
         f.write(content)
 
 
+# download a file in /.git/ and store it in the output directory
 def download(base_url, filename, directory):
     print('[-] Fetching %s ... ' % filename, end='')
     req = requests.get('%s/%s' % (base_url, filename))
@@ -76,15 +84,17 @@ if __name__ == '__main__':
 
     # check for directory listing
     if requests.get('%s/objects' % base_url).status_code == 200:
-        print('error: there is directory listing, you should use wget -r', file=sys.stderr)
+        print('error: directory listing is allowed, you should use wget -r', file=sys.stderr)
         exit(2)
 
     # output directory
-    if not os.path.exists(args.directory):
-        os.makedirs(args.directory)
+    directory = args.directory
 
-    if os.listdir(args.directory):
-        parser.error('%s is not empty' % args.directory)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    if os.listdir(directory):
+        parser.error('%s is not empty' % directory)
 
     # fetch the basic schema
     queue = [
@@ -105,19 +115,17 @@ if __name__ == '__main__':
 
     while queue:
         filename = queue.pop(0)
-        download(base_url, filename, args.directory)
+        download(base_url, filename, directory)
 
     # get the current head
-    with open(os.path.join(args.directory, '.git', 'HEAD'), 'r') as f:
-        head_content = f.read()
-
-    m = re.match(r'^ref: refs/heads/([a-zA-Z0-9\-]+)$', head_content)
+    head_content = read_file(os.path.join(directory, '.git', 'HEAD'), 'r')
+    m = re.match(r'^ref: refs/heads/([a-zA-Z0-9\-\._]+)$', head_content)
     assert m, 'error while parsing /.git/HEAD'
     head = m.group(1)
 
     # get head info
-    obj = download(base_url, 'refs/heads/%s' % head, args.directory)
-    download(base_url, 'logs/refs/heads/%s' % head, args.directory)
+    obj = download(base_url, 'refs/heads/%s' % head, directory)
+    download(base_url, 'logs/refs/heads/%s' % head, directory)
 
     queue = [obj.decode().strip()]
     mapping = {}
@@ -134,7 +142,7 @@ if __name__ == '__main__':
 
         print('[-] Current queue: %d' % (len(queue) + 1))
 
-        content = download(base_url, 'objects/%s/%s' % (obj[:2], obj[2:]), args.directory)
+        content = download(base_url, 'objects/%s/%s' % (obj[:2], obj[2:]), directory)
 
         if content:
             content = zlib.decompress(content)
@@ -162,7 +170,7 @@ if __name__ == '__main__':
                     queue.insert(0, obj)
             elif content.startswith(b'blob '):
                 _, content = extract_string(content)
-                write_file(os.path.join(args.directory, mapping[obj], obj), content)
+                write_file(os.path.join(directory, mapping[obj], obj), content)
             else:
                 print('error: unexpected object', file=sys.stderr)
                 exit(1)

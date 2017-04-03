@@ -204,7 +204,10 @@ class DownloadWorker(Worker):
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        with closing(self.session.get('%s/%s' % (url, filepath), stream=True, timeout=timeout)) as response:
+        with closing(self.session.get('%s/%s' % (url, filepath),
+                                      allow_redirects=False,
+                                      stream=True,
+                                      timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
             if response.status_code != 200:
@@ -264,7 +267,9 @@ class FindRefsWorker(DownloadWorker):
     ''' Find refs/ '''
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        response = self.session.get('%s/%s' % (url, filepath), timeout=timeout)
+        response = self.session.get('%s/%s' % (url, filepath),
+                                    allow_redirects=False,
+                                    timeout=timeout)
         printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
         if response.status_code != 200:
@@ -294,7 +299,9 @@ class FindObjectsWorker(DownloadWorker):
 
     def do_task(self, obj, url, directory, retry, timeout):
         filepath = '.git/objects/%s/%s' % (obj[:2], obj[2:])
-        response = self.session.get('%s/%s' % (url, filepath), timeout=timeout)
+        response = self.session.get('%s/%s' % (url, filepath),
+                                    allow_redirects=False,
+                                    timeout=timeout)
         printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
         if response.status_code != 200:
@@ -349,7 +356,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for /.git/HEAD
     printf('[-] Testing %s/.git/HEAD ', url)
-    response = requests.get('%s/.git/HEAD' % url)
+    response = requests.get('%s/.git/HEAD' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
     if response.status_code != 200:
         printf('error: %s/.git/HEAD does not exist\n', url, file=sys.stderr)
@@ -357,7 +364,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for directory listing
     printf('[-] Testing %s/.git/ ', url)
-    response = requests.get('%s/.git/' % url)
+    response = requests.get('%s/.git/' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
     if response.status_code == 200:
         if not is_index_html(response.text):

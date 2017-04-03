@@ -7,6 +7,7 @@ import os
 import os.path
 import re
 import socket
+import struct
 import subprocess
 import sys
 import zlib
@@ -47,6 +48,78 @@ def extract_cstring(data):
     n = data.find(b'\x00')
     assert n != -1
     return data[:n], data[n + 1:]
+
+
+def parse_index_file(f):
+    ''' Parse a .git/index file '''
+
+    def read(fmt):
+        size = struct.calcsize(fmt)
+        return struct.unpack('!' + fmt, f.read(size))[0]
+
+    result = {}
+    assert f.read(4) == b'DIRC', 'invalid git index file'
+    result['version'] = read('I')
+    assert result['version'] in {2, 3}, 'unsupported git index version'
+    num_entries = read('I')
+    result['entries'] = []
+
+    for n in range(num_entries):
+        entry = {}
+        entry['ctime_seconds'] = read('I')
+        entry['ctime_nanoseconds'] = read('I')
+        entry['mtime_seconds'] = read('I')
+        entry['mtime_nanoseconds'] = read('I')
+        entry['dev'] = read('I')
+        entry['ino'] = read('I')
+        entry['mode'] = read('I')
+        entry['uid'] = read('I')
+        entry['gid'] = read('I')
+        entry['size'] = read('I')
+        entry['sha1'] = codecs.encode(f.read(20), 'hex').decode()
+        entry['flags'] = read('H')
+
+        entry['assume-valid'] = bool(entry['flags'] & (0b10000000 << 8))
+        entry['extended'] = bool(entry['flags'] & (0b01000000 << 8))
+        stage_one = bool(entry['flags'] & (0b00100000 << 8))
+        stage_two = bool(entry['flags'] & (0b00010000 << 8))
+        entry['stage'] = stage_one, stage_two
+
+        # 12-bit name length, if the length is less than 0xFFF (else, 0xFFF)
+        name_len = entry['flags'] & 0xFFF
+
+        # 62 bytes so far
+        entry_len = 62
+
+        if entry['extended'] and result['version'] == 3:
+            entry['extra-flags'] = read('H')
+            entry['reserved'] = bool(entry['extra-flags'] & (0b10000000 << 8))
+            entry['skip-worktree'] = bool(entry['extra-flags'] & (0b01000000 << 8))
+            entry['intent-to-add'] = bool(entry['extra-flags'] & (0b00100000 << 8))
+            # 13-bits unused
+            entry_len += 2
+
+        if name_len < 0xfff:
+            entry['name'] = f.read(name_len).decode('UTF-8', 'replace')
+            entry_len += name_len
+        else:
+            name = b''
+            while True:
+                byte = f.read(1)
+                if byte == b'\x00':
+                    break
+                name += byte
+            entry['name'] = name.decode('UTF-8', 'replace')
+            entry_len += 1
+
+        pad_len = (8 - (entry_len % 8)) or 8
+        nuls = f.read(pad_len)
+        assert nuls == b'\x00' * pad_len, 'invalid padding'
+
+        result['entries'].append(entry)
+
+    # skip extensions
+    return result
 
 
 class Worker(multiprocessing.Process):
@@ -370,7 +443,13 @@ def fetch_git(url, directory, jobs, retry, timeout):
             obj = obj[1]
             objs.add(obj)
 
-    # TODO: see .git/index
+    # .git/index
+    index_path = os.path.join(directory, '.git', 'index')
+    if os.path.exists(index_path):
+        with open(index_path, 'rb') as index_file:
+            index = parse_index_file(index_file)
+            for entry in index['entries']:
+                objs.add(entry['sha1'])
 
     if os.path.exists(os.path.join(directory, '.git', 'objects', 'info', 'packs')):
         printf('error: using .git/objects/info/packs is currently not implemented\n', file=sys.stderr)

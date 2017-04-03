@@ -27,11 +27,7 @@ def printf(fmt, *args, file=sys.stdout):
 
 def is_index_html(content):
     ''' Return True if `content` is a directory index '''
-
-    if isinstance(content, str):
-        content = content.encode('UTF-8')
-
-    return content.startswith(b'<!DOCTYPE HTML') and b'Index of ' in content
+    return content.startswith('<!DOCTYPE HTML') and 'Index of ' in content
 
 
 def create_intermediate_dirs(path):
@@ -229,29 +225,27 @@ class RecursiveDownloadWorker(DownloadWorker):
     ''' Download a directory recursively '''
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        with closing(self.session.get('%s/%s' % (url, filepath), stream=True, timeout=timeout)) as response:
+        with closing(self.session.get('%s/%s' % (url, filepath),
+                                      allow_redirects=False,
+                                      stream=True,
+                                      timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
             if response.status_code != 200:
                 return []
 
-            it = response.iter_content(4094)
-            first_chunk = next(it)
-
-            if is_index_html(first_chunk): # directory index
-                html = first_chunk
-                for chunk in it:
-                    html += chunk
+            if filepath.endswith('/'): # directory index
+                assert is_index_html(response.text)
 
                 # find all links
-                html = bs4.BeautifulSoup(html, 'html.parser')
+                html = bs4.BeautifulSoup(response.text, 'html.parser')
                 tasks = []
 
                 for link in html.find_all('a'):
                     href = link.get('href')
 
                     if not href.startswith('/') and not href.startswith('?'):
-                        tasks.append(filepath + '/' + href.rstrip('/'))
+                        tasks.append(filepath + href)
 
                 return tasks
             else: # file
@@ -260,8 +254,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 
                 # write file
                 with open(abspath, 'wb') as f:
-                    f.write(first_chunk)
-                    for chunk in it:
+                    for chunk in response.iter_content(4096):
                         f.write(chunk)
 
                 return []
@@ -372,7 +365,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
             return 1
 
         printf('[-] Fetching .git recursively\n')
-        process_tasks(['.git', '.gitignore'],
+        process_tasks(['.git/', '.gitignore'],
                       RecursiveDownloadWorker,
                       jobs,
                       args=(url, directory, retry, timeout))

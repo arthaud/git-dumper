@@ -36,7 +36,10 @@ def create_intermediate_dirs(path):
     dirname, basename = os.path.split(path)
 
     if dirname and not os.path.exists(dirname):
-        os.makedirs(dirname)
+        try:
+            os.makedirs(dirname)
+        except FileExistsError:
+            pass # race condition
 
 
 def extract_cstring(data):

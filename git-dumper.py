@@ -155,6 +155,9 @@ class Worker(multiprocessing.Process):
 def process_tasks(initial_tasks, worker, jobs, args=()):
     ''' Process tasks in parallel '''
 
+    if not initial_tasks:
+        return
+
     pending_tasks = multiprocessing.Queue()
     tasks_done = multiprocessing.Queue()
     num_pending_tasks = 0
@@ -163,9 +166,11 @@ def process_tasks(initial_tasks, worker, jobs, args=()):
     # add all initial tasks in the queue
     for task in initial_tasks:
         assert task is not None
-        pending_tasks.put(task)
-        num_pending_tasks += 1
-        tasks_seen.add(task)
+
+        if task not in tasks_seen:
+            pending_tasks.put(task)
+            num_pending_tasks += 1
+            tasks_seen.add(task)
 
     # initialize processes
     processes = [worker(pending_tasks, tasks_done, args) for _ in range(jobs)]
@@ -412,6 +417,19 @@ def fetch_git(url, directory, jobs, retry, timeout):
         '.git/refs/stash',
         '.git/logs/refs/stash',
     ]
+
+    # use .git/info/refs to find refs
+    info_refs_path = os.path.join(directory, '.git', 'info', 'refs')
+    if os.path.exists(info_refs_path):
+        with open(info_refs_path, 'r') as f:
+            info_refs = f.read()
+
+        for ref in re.findall(r'(refs(/[a-zA-Z0-9\-\.\_\*]+)+)', info_refs):
+            ref = ref[0]
+            if not ref.endswith('*'):
+                tasks.append('.git/%s' % ref)
+                tasks.append('.git/logs/%s' % ref)
+
     process_tasks(tasks,
                   FindRefsWorker,
                   jobs,
@@ -421,9 +439,10 @@ def fetch_git(url, directory, jobs, retry, timeout):
     printf('[-] Finding objects\n')
     objs = set()
 
-    # .git/packed-refs, .git/refs/*, .git/logs/*
+    # .git/packed-refs, .git/info/refs, .git/refs/*, .git/logs/*
     files = [
         os.path.join(directory, '.git', 'packed-refs'),
+        os.pat.join(directory, '.git', 'info', 'refs'),
     ]
     for dirpath, _, filenames in os.walk(os.path.join(directory, '.git', 'refs')):
         for filename in filenames:
@@ -443,21 +462,13 @@ def fetch_git(url, directory, jobs, retry, timeout):
             obj = obj[1]
             objs.add(obj)
 
-    # .git/index
+    # use .git/index to find objects
     index_path = os.path.join(directory, '.git', 'index')
     if os.path.exists(index_path):
         with open(index_path, 'rb') as index_file:
             index = parse_index_file(index_file)
             for entry in index['entries']:
                 objs.add(entry['sha1'])
-
-    if os.path.exists(os.path.join(directory, '.git', 'objects', 'info', 'packs')):
-        printf('error: using .git/objects/info/packs is currently not implemented\n', file=sys.stderr)
-        return 1
-
-    if os.path.exists(os.path.join(directory, '.git', 'info', 'refs')):
-        printf('error: using .git/info/refs is currently not implemented\n', file=sys.stderr)
-        return 1
 
     # fetch all objects
     printf('[-] Fetching objects\n')

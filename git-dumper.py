@@ -435,6 +435,25 @@ def fetch_git(url, directory, jobs, retry, timeout):
                   jobs,
                   args=(url, directory, retry, timeout))
 
+    # find packs
+    printf('[-] Finding packs\n')
+    tasks = []
+
+    # use .git/objects/info/packs to find packs
+    info_packs_path = os.path.join(directory, '.git', 'objects', 'info', 'packs')
+    if os.path.exists(info_packs_path):
+        with open(info_packs_path, 'r') as f:
+            info_packs = f.read()
+
+        for sha1 in re.findall(r'pack-([a-f0-9]{40})\.pack', info_packs):
+            tasks.append('.git/objects/pack/pack-%s.idx' % sha1)
+            tasks.append('.git/objects/pack/pack-%s.pack' % sha1)
+
+    process_tasks(tasks,
+                  DownloadWorker,
+                  jobs,
+                  args=(url, directory, retry, timeout))
+
     # find objects
     printf('[-] Finding objects\n')
     objs = set()
@@ -442,7 +461,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
     # .git/packed-refs, .git/info/refs, .git/refs/*, .git/logs/*
     files = [
         os.path.join(directory, '.git', 'packed-refs'),
-        os.pat.join(directory, '.git', 'info', 'refs'),
+        os.path.join(directory, '.git', 'info', 'refs'),
     ]
     for dirpath, _, filenames in os.walk(os.path.join(directory, '.git', 'refs')):
         for filename in filenames:
@@ -469,6 +488,9 @@ def fetch_git(url, directory, jobs, retry, timeout):
             index = parse_index_file(index_file)
             for entry in index['entries']:
                 objs.add(entry['sha1'])
+
+    # TODO: use packs to find more objects to fetch, and objects that are packed
+    # TODO: use https://www.dulwich.io/
 
     # fetch all objects
     printf('[-] Fetching objects\n')

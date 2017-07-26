@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 from contextlib import closing
 import argparse
-import codecs
 import multiprocessing
 import os
 import os.path
 import re
 import socket
-import struct
 import subprocess
 import sys
-import zlib
 
 import bs4
+import dulwich.index
+import dulwich.objects
 import requests
 import socks
 
@@ -40,85 +39,6 @@ def create_intermediate_dirs(path):
             os.makedirs(dirname)
         except FileExistsError:
             pass # race condition
-
-
-def extract_cstring(data):
-    ''' Extract a C-string (\0 terminated) from a BLOB '''
-    n = data.find(b'\x00')
-    assert n != -1
-    return data[:n], data[n + 1:]
-
-
-def parse_index_file(f):
-    ''' Parse a .git/index file '''
-
-    def read(fmt):
-        size = struct.calcsize(fmt)
-        return struct.unpack('!' + fmt, f.read(size))[0]
-
-    result = {}
-    assert f.read(4) == b'DIRC', 'invalid git index file'
-    result['version'] = read('I')
-    assert result['version'] in {2, 3}, 'unsupported git index version'
-    num_entries = read('I')
-    result['entries'] = []
-
-    for n in range(num_entries):
-        entry = {}
-        entry['ctime_seconds'] = read('I')
-        entry['ctime_nanoseconds'] = read('I')
-        entry['mtime_seconds'] = read('I')
-        entry['mtime_nanoseconds'] = read('I')
-        entry['dev'] = read('I')
-        entry['ino'] = read('I')
-        entry['mode'] = read('I')
-        entry['uid'] = read('I')
-        entry['gid'] = read('I')
-        entry['size'] = read('I')
-        entry['sha1'] = codecs.encode(f.read(20), 'hex').decode()
-        entry['flags'] = read('H')
-
-        entry['assume-valid'] = bool(entry['flags'] & (0b10000000 << 8))
-        entry['extended'] = bool(entry['flags'] & (0b01000000 << 8))
-        stage_one = bool(entry['flags'] & (0b00100000 << 8))
-        stage_two = bool(entry['flags'] & (0b00010000 << 8))
-        entry['stage'] = stage_one, stage_two
-
-        # 12-bit name length, if the length is less than 0xFFF (else, 0xFFF)
-        name_len = entry['flags'] & 0xFFF
-
-        # 62 bytes so far
-        entry_len = 62
-
-        if entry['extended'] and result['version'] == 3:
-            entry['extra-flags'] = read('H')
-            entry['reserved'] = bool(entry['extra-flags'] & (0b10000000 << 8))
-            entry['skip-worktree'] = bool(entry['extra-flags'] & (0b01000000 << 8))
-            entry['intent-to-add'] = bool(entry['extra-flags'] & (0b00100000 << 8))
-            # 13-bits unused
-            entry_len += 2
-
-        if name_len < 0xfff:
-            entry['name'] = f.read(name_len).decode('UTF-8', 'replace')
-            entry_len += name_len
-        else:
-            name = b''
-            while True:
-                byte = f.read(1)
-                if byte == b'\x00':
-                    break
-                name += byte
-            entry['name'] = name.decode('UTF-8', 'replace')
-            entry_len += 1
-
-        pad_len = (8 - (entry_len % 8)) or 8
-        nuls = f.read(pad_len)
-        assert nuls == b'\x00' * pad_len, 'invalid padding'
-
-        result['entries'].append(entry)
-
-    # skip extensions
-    return result
 
 
 class Worker(multiprocessing.Process):
@@ -323,25 +243,21 @@ class FindObjectsWorker(DownloadWorker):
             f.write(response.content)
 
         # parse object file to find other objects
+        obj_file = dulwich.objects.ShaFile.from_path(abspath)
         tasks = []
-        content = zlib.decompress(response.content)
-        content_type, content = extract_cstring(content)
 
-        if content_type.startswith(b'commit '):
-            for line in content.split(b'\n'):
-                if line.startswith(b'tree ') or line.startswith(b'parent '):
-                    obj = line.split()[1].decode()
-                    tasks.append(obj)
-        elif content_type.startswith(b'tree '):
-            while content:
-                _, content = extract_cstring(content)
-                obj, content = content[:20], content[20:]
-                obj = codecs.encode(obj, 'hex').decode()
-                tasks.append(obj)
-        elif content_type.startswith(b'blob '):
+        if isinstance(obj_file, dulwich.objects.Commit):
+            tasks.append(obj_file.tree.decode())
+
+            for parent in obj_file.parents:
+                tasks.append(parent.decode())
+        elif isinstance(obj_file, dulwich.objects.Tree):
+            for item in obj_file.iteritems():
+                tasks.append(item.sha.decode())
+        elif isinstance(obj_file, dulwich.objects.Blob):
             pass
         else:
-            printf('error: unexpected object type: %r\n' % content_type, file=sys.stderr)
+            printf('error: unexpected object type: %r\n' % obj_file, file=sys.stderr)
             sys.exit(1)
 
         return tasks
@@ -357,6 +273,9 @@ def fetch_git(url, directory, jobs, retry, timeout):
     assert timeout >= 1, 'invalid timeout'
 
     # find base url
+    url = url.rstrip('/')
+    if url.endswith('HEAD'):
+        url = url[:-4]
     url = url.rstrip('/')
     if url.endswith('.git'):
         url = url[:-4]
@@ -394,11 +313,22 @@ def fetch_git(url, directory, jobs, retry, timeout):
     printf('[-] Fetching common files\n')
     tasks = [
         '.gitignore',
-        '.git/description',
-        '.git/index',
         '.git/COMMIT_EDITMSG',
+        '.git/description',
+        '.git/hooks/applypatch-msg.sample',
+        '.git/hooks/applypatch-msg.sample',
+        '.git/hooks/applypatch-msg.sample',
+        '.git/hooks/commit-msg.sample',
+        '.git/hooks/post-commit.sample',
+        '.git/hooks/post-receive.sample',
+        '.git/hooks/post-update.sample',
+        '.git/hooks/pre-applypatch.sample',
+        '.git/hooks/pre-commit.sample',
+        '.git/hooks/pre-rebase.sample',
+        '.git/hooks/prepare-commit-msg.sample',
+        '.git/hooks/update.sample',
+        '.git/index',
         '.git/info/exclude',
-        '.git/info/refs',
         '.git/objects/info/packs',
     ]
     process_tasks(tasks,
@@ -409,29 +339,20 @@ def fetch_git(url, directory, jobs, retry, timeout):
     # find refs
     printf('[-] Finding refs/\n')
     tasks = [
-        '.git/config',
-        '.git/packed-refs',
+        '.git/FETCH_HEAD',
         '.git/HEAD',
+        '.git/ORIG_HEAD',
+        '.git/config',
+        '.git/info/refs',
         '.git/logs/HEAD',
-        '.git/refs/heads/master',
         '.git/logs/refs/heads/master',
-        '.git/refs/remotes/origin/HEAD',
         '.git/logs/refs/remotes/origin/HEAD',
-        '.git/refs/stash',
         '.git/logs/refs/stash',
+        '.git/packed-refs',
+        '.git/refs/heads/master',
+        '.git/refs/remotes/origin/HEAD',
+        '.git/refs/stash',
     ]
-
-    # use .git/info/refs to find refs
-    info_refs_path = os.path.join(directory, '.git', 'info', 'refs')
-    if os.path.exists(info_refs_path):
-        with open(info_refs_path, 'r') as f:
-            info_refs = f.read()
-
-        for ref in re.findall(r'(refs(/[a-zA-Z0-9\-\.\_\*]+)+)', info_refs):
-            ref = ref[0]
-            if not ref.endswith('*'):
-                tasks.append('.git/%s' % ref)
-                tasks.append('.git/logs/%s' % ref)
 
     process_tasks(tasks,
                   FindRefsWorker,
@@ -465,6 +386,8 @@ def fetch_git(url, directory, jobs, retry, timeout):
     files = [
         os.path.join(directory, '.git', 'packed-refs'),
         os.path.join(directory, '.git', 'info', 'refs'),
+        os.path.join(directory, '.git', 'FETCH_HEAD'),
+        os.path.join(directory, '.git', 'ORIG_HEAD'),
     ]
     for dirpath, _, filenames in os.walk(os.path.join(directory, '.git', 'refs')):
         for filename in filenames:
@@ -487,13 +410,11 @@ def fetch_git(url, directory, jobs, retry, timeout):
     # use .git/index to find objects
     index_path = os.path.join(directory, '.git', 'index')
     if os.path.exists(index_path):
-        with open(index_path, 'rb') as index_file:
-            index = parse_index_file(index_file)
-            for entry in index['entries']:
-                objs.add(entry['sha1'])
+        index = dulwich.index.Index(index_path)
+        for entry in index.iterblobs():
+            objs.add(entry[1].decode())
 
     # TODO: use packs to find more objects to fetch, and objects that are packed
-    # TODO: use https://www.dulwich.io/
 
     # fetch all objects
     printf('[-] Fetching objects\n')
@@ -552,7 +473,7 @@ if __name__ == '__main__':
                 (r'^(.*):(\d+)$', socks.PROXY_TYPE_SOCKS5)]:
             m = re.match(pattern, args.proxy)
             if m:
-                socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, m.group(1), int(m.group(2)))
+                socks.setdefaultproxy(proxy_type, m.group(1), int(m.group(2)))
                 socket.socket = socks.socksocket
                 proxy_valid = True
                 break

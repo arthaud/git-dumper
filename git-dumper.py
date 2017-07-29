@@ -12,6 +12,7 @@ import sys
 import bs4
 import dulwich.index
 import dulwich.objects
+import dulwich.pack
 import requests
 import socks
 
@@ -39,6 +40,27 @@ def create_intermediate_dirs(path):
             os.makedirs(dirname)
         except FileExistsError:
             pass # race condition
+
+
+def get_referenced_sha1(obj_file):
+    ''' Return all the referenced SHA1 in the given object file '''
+    objs = []
+
+    if isinstance(obj_file, dulwich.objects.Commit):
+        objs.append(obj_file.tree.decode())
+
+        for parent in obj_file.parents:
+            objs.append(parent.decode())
+    elif isinstance(obj_file, dulwich.objects.Tree):
+        for item in obj_file.iteritems():
+            objs.append(item.sha.decode())
+    elif isinstance(obj_file, dulwich.objects.Blob):
+        pass
+    else:
+        printf('error: unexpected object type: %r\n' % obj_file, file=sys.stderr)
+        sys.exit(1)
+
+    return objs
 
 
 class Worker(multiprocessing.Process):
@@ -75,16 +97,16 @@ class Worker(multiprocessing.Process):
         raise NotImplementedError
 
 
-def process_tasks(initial_tasks, worker, jobs, args=()):
+def process_tasks(initial_tasks, worker, jobs, args=(), tasks_done=None):
     ''' Process tasks in parallel '''
 
     if not initial_tasks:
         return
 
+    tasks_seen = set(tasks_done) if tasks_done else set()
     pending_tasks = multiprocessing.Queue()
     tasks_done = multiprocessing.Queue()
     num_pending_tasks = 0
-    tasks_seen = set()
 
     # add all initial tasks in the queue
     for task in initial_tasks:
@@ -244,23 +266,7 @@ class FindObjectsWorker(DownloadWorker):
 
         # parse object file to find other objects
         obj_file = dulwich.objects.ShaFile.from_path(abspath)
-        tasks = []
-
-        if isinstance(obj_file, dulwich.objects.Commit):
-            tasks.append(obj_file.tree.decode())
-
-            for parent in obj_file.parents:
-                tasks.append(parent.decode())
-        elif isinstance(obj_file, dulwich.objects.Tree):
-            for item in obj_file.iteritems():
-                tasks.append(item.sha.decode())
-        elif isinstance(obj_file, dulwich.objects.Blob):
-            pass
-        else:
-            printf('error: unexpected object type: %r\n' % obj_file, file=sys.stderr)
-            sys.exit(1)
-
-        return tasks
+        return get_referenced_sha1(obj_file)
 
 
 def fetch_git(url, directory, jobs, retry, timeout):
@@ -285,19 +291,20 @@ def fetch_git(url, directory, jobs, retry, timeout):
     printf('[-] Testing %s/.git/HEAD ', url)
     response = requests.get('%s/.git/HEAD' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
+
     if response.status_code != 200:
         printf('error: %s/.git/HEAD does not exist\n', url, file=sys.stderr)
+        return 1
+    elif not response.text.startswith('ref:'):
+        printf('error: %s/.git/HEAD is not a git HEAD file\n', url, file=sys.stderr)
         return 1
 
     # check for directory listing
     printf('[-] Testing %s/.git/ ', url)
     response = requests.get('%s/.git/' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
-    if response.status_code == 200:
-        if not is_index_html(response.text):
-            printf('error: unexpected response for %s/.git/\n', url, file=sys.stderr)
-            return 1
 
+    if response.status_code == 200 and is_index_html(response.text):
         printf('[-] Fetching .git recursively\n')
         process_tasks(['.git/', '.gitignore'],
                       RecursiveDownloadWorker,
@@ -324,7 +331,9 @@ def fetch_git(url, directory, jobs, retry, timeout):
         '.git/hooks/post-update.sample',
         '.git/hooks/pre-applypatch.sample',
         '.git/hooks/pre-commit.sample',
+        '.git/hooks/pre-push.sample',
         '.git/hooks/pre-rebase.sample',
+        '.git/hooks/pre-receive.sample',
         '.git/hooks/prepare-commit-msg.sample',
         '.git/hooks/update.sample',
         '.git/index',
@@ -381,6 +390,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
     # find objects
     printf('[-] Finding objects\n')
     objs = set()
+    packed_objs = set()
 
     # .git/packed-refs, .git/info/refs, .git/refs/*, .git/logs/*
     files = [
@@ -411,17 +421,32 @@ def fetch_git(url, directory, jobs, retry, timeout):
     index_path = os.path.join(directory, '.git', 'index')
     if os.path.exists(index_path):
         index = dulwich.index.Index(index_path)
+
         for entry in index.iterblobs():
             objs.add(entry[1].decode())
 
-    # TODO: use packs to find more objects to fetch, and objects that are packed
+    # use packs to find more objects to fetch, and objects that are packed
+    pack_file_dir = os.path.join(directory, '.git', 'objects', 'pack')
+    if os.path.isdir(pack_file_dir):
+        for filename in os.listdir(pack_file_dir):
+            if filename.startswith('pack-') and filename.endswith('.pack'):
+                pack_data_path = os.path.join(pack_file_dir, filename)
+                pack_idx_path = os.path.join(pack_file_dir, filename[:-5] + '.idx')
+                pack_data = dulwich.pack.PackData(pack_data_path)
+                pack_idx = dulwich.pack.load_pack_index(pack_idx_path)
+                pack = dulwich.pack.Pack.from_objects(pack_data, pack_idx)
+
+                for obj_file in pack.iterobjects():
+                    packed_objs.add(obj_file.sha().hexdigest())
+                    objs |= set(get_referenced_sha1(obj_file))
 
     # fetch all objects
     printf('[-] Fetching objects\n')
     process_tasks(objs,
                   FindObjectsWorker,
                   jobs,
-                  args=(url, directory, retry, timeout))
+                  args=(url, directory, retry, timeout),
+                  tasks_done=packed_objs)
 
     # git checkout
     printf('[-] Running git checkout .\n')

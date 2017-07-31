@@ -356,10 +356,12 @@ def fetch_git(url, directory, jobs, retry, timeout):
         '.git/logs/HEAD',
         '.git/logs/refs/heads/master',
         '.git/logs/refs/remotes/origin/HEAD',
+        '.git/logs/refs/remotes/origin/master',
         '.git/logs/refs/stash',
         '.git/packed-refs',
         '.git/refs/heads/master',
         '.git/refs/remotes/origin/HEAD',
+        '.git/refs/remotes/origin/master',
         '.git/refs/stash',
     ]
 

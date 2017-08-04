@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 import sys
+import urllib.parse
 
 import bs4
 import dulwich.index
@@ -25,9 +26,28 @@ def printf(fmt, *args, file=sys.stdout):
     file.flush()
 
 
-def is_index_html(content):
-    ''' Return True if `content` is a directory index '''
-    return content.startswith('<!DOCTYPE HTML') and 'Index of ' in content
+def is_html(response):
+    ''' Return True if the response is a HTML webpage '''
+    return '<html>' in response.text
+
+
+def get_indexed_files(response):
+    ''' Return all the files in the directory index webpage '''
+    html = bs4.BeautifulSoup(response.text, 'html.parser')
+    files = []
+
+    for link in html.find_all('a'):
+        url = urllib.parse.urlparse(link.get('href'))
+
+        if (url.path and
+                url.path != '.' and
+                url.path != '..' and
+                not url.path.startswith('/') and
+                not url.scheme and
+                not url.netloc):
+            files.append(url.path)
+
+    return files
 
 
 def create_intermediate_dirs(path):
@@ -184,23 +204,18 @@ class RecursiveDownloadWorker(DownloadWorker):
                                       timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
+            if (response.status_code in (301, 302) and
+                    'Location' in response.headers and
+                    response.headers['Location'].endswith(filepath + '/')):
+                return [filepath + '/']
+
             if response.status_code != 200:
                 return []
 
             if filepath.endswith('/'): # directory index
-                assert is_index_html(response.text)
+                assert is_html(response)
 
-                # find all links
-                html = bs4.BeautifulSoup(response.text, 'html.parser')
-                tasks = []
-
-                for link in html.find_all('a'):
-                    href = link.get('href')
-
-                    if not href.startswith('/') and not href.startswith('?'):
-                        tasks.append(filepath + href)
-
-                return tasks
+                return [filepath + filename for filename in get_indexed_files(response)]
             else: # file
                 abspath = os.path.abspath(os.path.join(directory, filepath))
                 create_intermediate_dirs(abspath)
@@ -304,7 +319,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
     response = requests.get('%s/.git/' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
-    if response.status_code == 200 and is_index_html(response.text):
+    if response.status_code == 200 and is_html(response) and 'HEAD' in get_indexed_files(response):
         printf('[-] Fetching .git recursively\n')
         process_tasks(['.git/', '.gitignore'],
                       RecursiveDownloadWorker,

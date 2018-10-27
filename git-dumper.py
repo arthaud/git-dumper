@@ -171,6 +171,7 @@ class DownloadWorker(Worker):
 
     def init(self, url, directory, retry, timeout):
         self.session = requests.Session()
+        self.session.verify = False
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
@@ -304,7 +305,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for /.git/HEAD
     printf('[-] Testing %s/.git/HEAD ', url)
-    response = requests.get('%s/.git/HEAD' % url, allow_redirects=False)
+    response = requests.get('%s/.git/HEAD' % url, verify=False, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
     if response.status_code != 200:
@@ -316,7 +317,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for directory listing
     printf('[-] Testing %s/.git/ ', url)
-    response = requests.get('%s/.git/' % url, allow_redirects=False)
+    response = requests.get('%s/.git/' % url, verify=False, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
     if response.status_code == 200 and is_html(response) and 'HEAD' in get_indexed_files(response):

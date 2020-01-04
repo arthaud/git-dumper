@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import urllib.parse
+import urllib3
 
 import bs4
 import dulwich.index
@@ -533,6 +534,8 @@ if __name__ == '__main__':
 
     if os.listdir(args.directory):
         parser.error('%s is not empty' % args.directory)
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # fetch everything
     sys.exit(fetch_git(args.url, args.directory, args.jobs, args.retry, args.timeout))

@@ -18,6 +18,8 @@ import dulwich.pack
 import requests
 import socks
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 def printf(fmt, *args, file=sys.stdout):
     if args:
@@ -179,6 +181,7 @@ class DownloadWorker(Worker):
         with closing(self.session.get('%s/%s' % (url, filepath),
                                       allow_redirects=False,
                                       stream=True,
+                                      verify=False,
                                       timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
@@ -203,6 +206,7 @@ class RecursiveDownloadWorker(DownloadWorker):
         with closing(self.session.get('%s/%s' % (url, filepath),
                                       allow_redirects=False,
                                       stream=True,
+                                      verify=False,
                                       timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
@@ -236,6 +240,7 @@ class FindRefsWorker(DownloadWorker):
     def do_task(self, filepath, url, directory, retry, timeout):
         response = self.session.get('%s/%s' % (url, filepath),
                                     allow_redirects=False,
+                                    verify=False,
                                     timeout=timeout)
         printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
@@ -268,6 +273,7 @@ class FindObjectsWorker(DownloadWorker):
         filepath = '.git/objects/%s/%s' % (obj[:2], obj[2:])
         response = self.session.get('%s/%s' % (url, filepath),
                                     allow_redirects=False,
+                                    verify=False,
                                     timeout=timeout)
         printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 

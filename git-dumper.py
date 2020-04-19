@@ -380,6 +380,8 @@ def fetch_git(url, directory, jobs, retry, timeout):
         '.git/refs/remotes/origin/HEAD',
         '.git/refs/remotes/origin/master',
         '.git/refs/stash',
+        '.git/refs/wip/wtree/refs/heads/master', #Magit
+        '.git/refs/wip/index/refs/heads/master'  #Magit
     ]
 
     process_tasks(tasks,

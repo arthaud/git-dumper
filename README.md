@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 ## How does it work?
 
-The tool will first check if directory listing is available. It it is, then it will just recursively download the .git directory (what you would do with `wget`).
+The tool will first check if directory listing is available. If it is, then it will just recursively download the .git directory (what you would do with `wget`).
 
 If directory listing is not available, it will use several methods to find as many files as possible. Step by step, git-dumper will:
 * Fetch all common files (`.gitignore`, `.git/HEAD`, `.git/index`, etc.);

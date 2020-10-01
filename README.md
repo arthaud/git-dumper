@@ -2,7 +2,7 @@
 
 A tool to dump a git repository from a website.
 
-## Usage
+## Usage 
 
 ```
 usage: git-dumper.py [options] URL DIR
@@ -23,7 +23,7 @@ optional arguments:
                         maximum time in seconds before giving up
 ```
 
-### Example
+### Example to understand thing
 
 ```
 ./git-dumper.py http://website.com/.git ~/website

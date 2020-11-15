@@ -336,9 +336,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
     if not verification[0]:
         printf(verification[1], url, "/.git/HEAD")
         return 1
-    elif not response.text.startswith('ref:'):
-        printf('error: %s/.git/HEAD is not a git HEAD file\n', url, file=sys.stderr)
-        return 1
+
 
     # check for directory listing
     printf('[-] Testing %s/.git/ ', url)

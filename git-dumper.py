@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 import sys
+import traceback
 import urllib.parse
 import urllib3
 
@@ -105,7 +106,12 @@ class Worker(multiprocessing.Process):
             if task is None: # end signal
                 return
 
-            result = self.do_task(task, *self.args)
+            try:
+                result = self.do_task(task, *self.args)
+            except Exception as e:
+                print("Task %s raised exception:" % task)
+                traceback.print_exc()
+                result = []
 
             assert isinstance(result, list), 'do_task() should return a list of tasks'
 

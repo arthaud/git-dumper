@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from contextlib import closing
 import argparse
+import enum
 import multiprocessing
 import os
 import os.path
@@ -30,7 +31,7 @@ def printf(fmt, *args, file=sys.stdout):
 
 def is_html(response):
     ''' Return True if the response is a HTML webpage '''
-    return '<html>' in response.text
+    return "html" in response.headers["Content-Type"]
 
 
 def get_indexed_files(response):
@@ -84,6 +85,16 @@ def get_referenced_sha1(obj_file):
 
     return objs
 
+
+def verify_response(response):
+    if response.status_code != 200:
+        return False, f"[-] %s/%s responded with status code {response.status_code}\n"
+    elif "Content-Length" in response.headers and response.headers["Content-Length"] == 0:
+        return False, "[-] %s/%s responded with a zero-length body\n"
+    elif "Content-Type" in response.headers and "text/html" in response.headers["Content-Type"]:
+        return False, "[-] %s/%s responded with HTML\n"
+    else:
+        return True, True
 
 class Worker(multiprocessing.Process):
     ''' Worker for process_tasks '''
@@ -186,10 +197,13 @@ class DownloadWorker(Worker):
                                       allow_redirects=False,
                                       stream=True,
                                       timeout=timeout)) as response:
+            verification = verify_response(response)
+            if not verification[0]:
+                printf(verification[1], url, filepath)
+                return []
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
-            if response.status_code != 200:
-                return []
+
 
             abspath = os.path.abspath(os.path.join(directory, filepath))
             create_intermediate_dirs(abspath)
@@ -211,20 +225,19 @@ class RecursiveDownloadWorker(DownloadWorker):
                                       stream=True,
                                       timeout=timeout)) as response:
             printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
-
             if (response.status_code in (301, 302) and
                     'Location' in response.headers and
                     response.headers['Location'].endswith(filepath + '/')):
                 return [filepath + '/']
-
-            if response.status_code != 200:
-                return []
-
             if filepath.endswith('/'): # directory index
                 assert is_html(response)
 
                 return [filepath + filename for filename in get_indexed_files(response)]
             else: # file
+                verification = verify_response(response)
+                if not verification[0]:
+                    printf(verification[1], url, filepath)
+                    return []
                 abspath = os.path.abspath(os.path.join(directory, filepath))
                 create_intermediate_dirs(abspath)
 
@@ -243,10 +256,12 @@ class FindRefsWorker(DownloadWorker):
         response = self.session.get('%s/%s' % (url, filepath),
                                     allow_redirects=False,
                                     timeout=timeout)
-        printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
-        if response.status_code != 200:
+        verification = verify_response(response)
+        if not verification[0]:
+            printf(verification[1], url, filepath)
             return []
+        printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
         abspath = os.path.abspath(os.path.join(directory, filepath))
         create_intermediate_dirs(abspath)
@@ -275,10 +290,13 @@ class FindObjectsWorker(DownloadWorker):
         response = self.session.get('%s/%s' % (url, filepath),
                                     allow_redirects=False,
                                     timeout=timeout)
-        printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
-        if response.status_code != 200:
+        verification = verify_response(response)
+        if not verification[0]:
+            printf(verification[1], url, filepath)
             return []
+
+        printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
         abspath = os.path.abspath(os.path.join(directory, filepath))
         create_intermediate_dirs(abspath)
@@ -315,8 +333,9 @@ def fetch_git(url, directory, jobs, retry, timeout):
     response = requests.get('%s/.git/HEAD' % url, verify=False, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
-    if response.status_code != 200:
-        printf('error: %s/.git/HEAD does not exist\n', url, file=sys.stderr)
+    verification = verify_response(response)
+    if not verification[0]:
+        printf(verification[1], url, "/.git/HEAD")
         return 1
     elif not response.text.startswith('ref:'):
         printf('error: %s/.git/HEAD is not a git HEAD file\n', url, file=sys.stderr)

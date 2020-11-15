@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from contextlib import closing
 import argparse
-import enum
 import multiprocessing
 import os
 import os.path

@@ -176,6 +176,10 @@ class DownloadWorker(Worker):
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
+        if os.path.isfile(filepath):
+            printf('[-] Already downloaded %s/%s\n', url, filepath)
+            return []
+        
         with closing(self.session.get('%s/%s' % (url, filepath),
                                       allow_redirects=False,
                                       stream=True,
@@ -200,6 +204,10 @@ class RecursiveDownloadWorker(DownloadWorker):
     ''' Download a directory recursively '''
 
     def do_task(self, filepath, url, directory, retry, timeout):
+        if os.path.isfile(filepath):
+            printf('[-] Already downloaded %s/%s\n', url, filepath)
+            return []
+        
         with closing(self.session.get('%s/%s' % (url, filepath),
                                       allow_redirects=False,
                                       stream=True,
@@ -266,21 +274,26 @@ class FindObjectsWorker(DownloadWorker):
 
     def do_task(self, obj, url, directory, retry, timeout):
         filepath = '.git/objects/%s/%s' % (obj[:2], obj[2:])
-        response = self.session.get('%s/%s' % (url, filepath),
-                                    allow_redirects=False,
-                                    timeout=timeout)
-        printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
+        
+        if os.path.isfile(filepath):
+            printf('[-] Already downloaded %s/%s\n', url, filepath)
+        else:
+            response = self.session.get('%s/%s' % (url, filepath),
+                                        allow_redirects=False,
+                                        timeout=timeout)
+            printf('[-] Fetching %s/%s [%d]\n', url, filepath, response.status_code)
 
-        if response.status_code != 200:
-            return []
+            if response.status_code != 200:
+                return []
+
+            abspath = os.path.abspath(os.path.join(directory, filepath))
+            create_intermediate_dirs(abspath)
+
+            # write file
+            with open(abspath, 'wb') as f:
+                f.write(response.content)
 
         abspath = os.path.abspath(os.path.join(directory, filepath))
-        create_intermediate_dirs(abspath)
-
-        # write file
-        with open(abspath, 'wb') as f:
-            f.write(response.content)
-
         # parse object file to find other objects
         obj_file = dulwich.objects.ShaFile.from_path(abspath)
         return get_referenced_sha1(obj_file)
@@ -290,10 +303,12 @@ def fetch_git(url, directory, jobs, retry, timeout):
     ''' Dump a git repository into the output directory '''
 
     assert os.path.isdir(directory), '%s is not a directory' % directory
-    assert not os.listdir(directory), '%s is not empty' % directory
     assert jobs >= 1, 'invalid number of jobs'
     assert retry >= 1, 'invalid number of retries'
     assert timeout >= 1, 'invalid timeout'
+
+    if os.listdir(directory):
+        printf("Warning: Destination '%s' is not empty\n", directory)
 
     # find base url
     url = url.rstrip('/')
@@ -533,9 +548,6 @@ if __name__ == '__main__':
 
     if not os.path.isdir(args.directory):
         parser.error('%s is not a directory' % args.directory)
-
-    if os.listdir(args.directory):
-        parser.error('%s is not empty' % args.directory)
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

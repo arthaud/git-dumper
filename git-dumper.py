@@ -176,7 +176,6 @@ class DownloadWorker(Worker):
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        
         if os.path.isfile(filepath):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
             return []
@@ -205,7 +204,6 @@ class RecursiveDownloadWorker(DownloadWorker):
     ''' Download a directory recursively '''
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        
         if os.path.isfile(filepath):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
             return []
@@ -279,8 +277,7 @@ class FindObjectsWorker(DownloadWorker):
         
         if os.path.isfile(filepath):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
-            
-        if not os.path.isfile(filepath):
+        else:
             response = self.session.get('%s/%s' % (url, filepath),
                                         allow_redirects=False,
                                         timeout=timeout)
@@ -306,10 +303,12 @@ def fetch_git(url, directory, jobs, retry, timeout):
     ''' Dump a git repository into the output directory '''
 
     assert os.path.isdir(directory), '%s is not a directory' % directory
-    # assert not os.listdir(directory), '%s is not empty' % directory
     assert jobs >= 1, 'invalid number of jobs'
     assert retry >= 1, 'invalid number of retries'
     assert timeout >= 1, 'invalid timeout'
+
+    if os.listdir(directory):
+        printf("Warning: Destination '%s' is not empty\n", directory)
 
     # find base url
     url = url.rstrip('/')
@@ -549,9 +548,6 @@ if __name__ == '__main__':
 
     if not os.path.isdir(args.directory):
         parser.error('%s is not a directory' % args.directory)
-
-    # if os.listdir(args.directory):
-        # parser.error('%s is not empty' % args.directory)
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

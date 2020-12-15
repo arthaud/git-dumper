@@ -176,7 +176,7 @@ class DownloadWorker(Worker):
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        if os.path.isfile(filepath):
+        if os.path.isfile(os.path.join(directory, filepath)):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
             return []
         
@@ -204,7 +204,7 @@ class RecursiveDownloadWorker(DownloadWorker):
     ''' Download a directory recursively '''
 
     def do_task(self, filepath, url, directory, retry, timeout):
-        if os.path.isfile(filepath):
+        if os.path.isfile(os.path.join(directory, filepath)):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
             return []
         
@@ -275,7 +275,7 @@ class FindObjectsWorker(DownloadWorker):
     def do_task(self, obj, url, directory, retry, timeout):
         filepath = '.git/objects/%s/%s' % (obj[:2], obj[2:])
         
-        if os.path.isfile(filepath):
+        if os.path.isfile(os.path.join(directory, filepath)):
             printf('[-] Already downloaded %s/%s\n', url, filepath)
         else:
             response = self.session.get('%s/%s' % (url, filepath),

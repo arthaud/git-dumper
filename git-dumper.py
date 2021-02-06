@@ -36,13 +36,13 @@ def get_indexed_files(response):
     ''' Return all the files in the directory index webpage '''
     html = bs4.BeautifulSoup(response.text, 'html.parser')
     files = []
+    bad = {'.', '..', '../'}
 
     for link in html.find_all('a'):
         url = urllib.parse.urlparse(link.get('href'))
 
         if (url.path and
-                url.path != '.' and
-                url.path != '..' and
+                url.path not in bad and
                 not url.path.startswith('/') and
                 not url.scheme and
                 not url.netloc):
@@ -170,9 +170,10 @@ def process_tasks(initial_tasks, worker, jobs, args=(), tasks_done=None):
 class DownloadWorker(Worker):
     ''' Download a list of files '''
 
-    def init(self, url, directory, retry, timeout):
+    def init(self, url, directory, retry, timeout, user_agent):
         self.session = requests.Session()
         self.session.verify = False
+        self.session.headers = {'User-Agent': user_agent}
         self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     def do_task(self, filepath, url, directory, retry, timeout):
@@ -299,13 +300,18 @@ class FindObjectsWorker(DownloadWorker):
         return get_referenced_sha1(obj_file)
 
 
-def fetch_git(url, directory, jobs, retry, timeout):
+def fetch_git(url, directory, jobs, retry, timeout, user_agent):
     ''' Dump a git repository into the output directory '''
 
     assert os.path.isdir(directory), '%s is not a directory' % directory
     assert jobs >= 1, 'invalid number of jobs'
     assert retry >= 1, 'invalid number of retries'
     assert timeout >= 1, 'invalid timeout'
+
+    session = requests.Session()
+    session.verify = False
+    session.headers = {'User-Agent': user_agent}
+    session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     if os.listdir(directory):
         printf("Warning: Destination '%s' is not empty\n", directory)
@@ -321,7 +327,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for /.git/HEAD
     printf('[-] Testing %s/.git/HEAD ', url)
-    response = requests.get('%s/.git/HEAD' % url, verify=False, allow_redirects=False)
+    response = session.get('%s/.git/HEAD' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
     if response.status_code != 200:
@@ -333,7 +339,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
 
     # check for directory listing
     printf('[-] Testing %s/.git/ ', url)
-    response = requests.get('%s/.git/' % url, verify=False, allow_redirects=False)
+    response = session.get('%s/.git/' % url, allow_redirects=False)
     printf('[%d]\n', response.status_code)
 
     if response.status_code == 200 and is_html(response) and 'HEAD' in get_indexed_files(response):
@@ -355,8 +361,6 @@ def fetch_git(url, directory, jobs, retry, timeout):
         '.git/COMMIT_EDITMSG',
         '.git/description',
         '.git/hooks/applypatch-msg.sample',
-        '.git/hooks/applypatch-msg.sample',
-        '.git/hooks/applypatch-msg.sample',
         '.git/hooks/commit-msg.sample',
         '.git/hooks/post-commit.sample',
         '.git/hooks/post-receive.sample',
@@ -375,7 +379,7 @@ def fetch_git(url, directory, jobs, retry, timeout):
     process_tasks(tasks,
                   DownloadWorker,
                   jobs,
-                  args=(url, directory, retry, timeout))
+                  args=(url, directory, retry, timeout, user_agent))
 
     # find refs
     printf('[-] Finding refs/\n')
@@ -509,6 +513,9 @@ if __name__ == '__main__':
                         help='number of request attempts before giving up')
     parser.add_argument('-t', '--timeout', type=int, default=3,
                         help='maximum time in seconds before giving up')
+    parser.add_argument('-u', '--user-agent', type=str,
+                        default='Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0',
+                        help='user-agent to use for requests')
     args = parser.parse_args()
 
     # jobs
@@ -552,4 +559,4 @@ if __name__ == '__main__':
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # fetch everything
-    sys.exit(fetch_git(args.url, args.directory, args.jobs, args.retry, args.timeout))
+    sys.exit(fetch_git(args.url, args.directory, args.jobs, args.retry, args.timeout, args.user_agent))

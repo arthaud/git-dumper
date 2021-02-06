@@ -36,13 +36,13 @@ def get_indexed_files(response):
     ''' Return all the files in the directory index webpage '''
     html = bs4.BeautifulSoup(response.text, 'html.parser')
     files = []
+    bad = {'.', '..', '../'}
 
     for link in html.find_all('a'):
         url = urllib.parse.urlparse(link.get('href'))
 
         if (url.path and
-                url.path != '.' and
-                url.path != '..' and
+                url.path not in bad and
                 not url.path.startswith('/') and
                 not url.scheme and
                 not url.netloc):

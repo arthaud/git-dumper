@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 import sys
+import traceback
 import urllib.parse
 import urllib3
 
@@ -29,7 +30,7 @@ def printf(fmt, *args, file=sys.stdout):
 
 def is_html(response):
     """ Return True if the response is a HTML webpage """
-    return "<html>" in response.text
+    return "text/html" in response.headers["Content-Type"]
 
 
 def get_indexed_files(response):
@@ -51,6 +52,28 @@ def get_indexed_files(response):
             files.append(url.path)
 
     return files
+
+
+def verify_response(response):
+    if response.status_code != 200:
+        return (
+            False,
+            "[-] %s/%s responded with status code {code}\n".format(
+                code=response.status_code
+            ),
+        )
+    elif (
+        "Content-Length" in response.headers
+        and response.headers["Content-Length"] == 0
+    ):
+        return False, "[-] %s/%s responded with a zero-length body\n"
+    elif (
+        "Content-Type" in response.headers
+        and "text/html" in response.headers["Content-Type"]
+    ):
+        return False, "[-] %s/%s responded with HTML\n"
+    else:
+        return True, True
 
 
 def create_intermediate_dirs(path):
@@ -109,7 +132,12 @@ class Worker(multiprocessing.Process):
             if task is None:  # end signal
                 return
 
-            result = self.do_task(task, *self.args)
+            try:
+                result = self.do_task(task, *self.args)
+            except Exception:
+                printf("Task %s raised exception:\n", task, file=sys.stderr)
+                traceback.print_exc()
+                result = []
 
             assert isinstance(
                 result, list
@@ -204,7 +232,9 @@ class DownloadWorker(Worker):
                 response.status_code,
             )
 
-            if response.status_code != 200:
+            valid, error_message = verify_response(response)
+            if not valid:
+                printf(error_message, url, filepath, file=sys.stderr)
                 return []
 
             abspath = os.path.abspath(os.path.join(directory, filepath))
@@ -248,9 +278,6 @@ class RecursiveDownloadWorker(DownloadWorker):
             ):
                 return [filepath + "/"]
 
-            if response.status_code != 200:
-                return []
-
             if filepath.endswith("/"):  # directory index
                 assert is_html(response)
 
@@ -259,6 +286,11 @@ class RecursiveDownloadWorker(DownloadWorker):
                     for filename in get_indexed_files(response)
                 ]
             else:  # file
+                valid, error_message = verify_response(response)
+                if not valid:
+                    printf(error_message, url, filepath, file=sys.stderr)
+                    return []
+
                 abspath = os.path.abspath(os.path.join(directory, filepath))
                 create_intermediate_dirs(abspath)
 
@@ -281,7 +313,9 @@ class FindRefsWorker(DownloadWorker):
             "[-] Fetching %s/%s [%d]\n", url, filepath, response.status_code
         )
 
-        if response.status_code != 200:
+        valid, error_message = verify_response(response)
+        if not valid:
+            printf(error_message, url, filepath, file=sys.stderr)
             return []
 
         abspath = os.path.abspath(os.path.join(directory, filepath))
@@ -326,7 +360,9 @@ class FindObjectsWorker(DownloadWorker):
                 response.status_code,
             )
 
-            if response.status_code != 200:
+            valid, error_message = verify_response(response)
+            if not valid:
+                printf(error_message, url, filepath, file=sys.stderr)
                 return []
 
             abspath = os.path.abspath(os.path.join(directory, filepath))
@@ -372,8 +408,9 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
     response = session.get("%s/.git/HEAD" % url, allow_redirects=False)
     printf("[%d]\n", response.status_code)
 
-    if response.status_code != 200:
-        printf("error: %s/.git/HEAD does not exist\n", url, file=sys.stderr)
+    valid, error_message = verify_response(response)
+    if not valid:
+        printf(error_message, url, "/.git/HEAD", file=sys.stderr)
         return 1
     elif not response.text.startswith("ref:"):
         printf(

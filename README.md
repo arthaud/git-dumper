@@ -21,6 +21,10 @@ optional arguments:
                         number of request attempts before giving up
   -t TIMEOUT, --timeout TIMEOUT
                         maximum time in seconds before giving up
+  -u USER_AGENT, --user-agent USER_AGENT
+                        user-agent to use for requests
+  -H HEADER, --header HEADER
+                        additional http headers, e.g `NAME=VALUE`
 ```
 
 ### Example

@@ -204,15 +204,15 @@ def process_tasks(initial_tasks, worker, jobs, args=(), tasks_done=None):
 class DownloadWorker(Worker):
     """ Download a list of files """
 
-    def init(self, url, directory, retry, timeout, user_agent):
+    def init(self, url, directory, retry, timeout, http_headers):
         self.session = requests.Session()
         self.session.verify = False
-        self.session.headers = {"User-Agent": user_agent}
+        self.session.headers = http_headers
         self.session.mount(
             url, requests.adapters.HTTPAdapter(max_retries=retry)
         )
 
-    def do_task(self, filepath, url, directory, retry, timeout, user_agent):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
             return []
@@ -251,7 +251,7 @@ class DownloadWorker(Worker):
 class RecursiveDownloadWorker(DownloadWorker):
     """ Download a directory recursively """
 
-    def do_task(self, filepath, url, directory, retry, timeout, user_agent):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
             return []
@@ -305,7 +305,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 class FindRefsWorker(DownloadWorker):
     """ Find refs/ """
 
-    def do_task(self, filepath, url, directory, retry, timeout, user_agent):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
         response = self.session.get(
             "%s/%s" % (url, filepath), allow_redirects=False, timeout=timeout
         )
@@ -342,7 +342,7 @@ class FindRefsWorker(DownloadWorker):
 class FindObjectsWorker(DownloadWorker):
     """ Find objects """
 
-    def do_task(self, obj, url, directory, retry, timeout, user_agent):
+    def do_task(self, obj, url, directory, retry, timeout, http_headers):
         filepath = ".git/objects/%s/%s" % (obj[:2], obj[2:])
 
         if os.path.isfile(os.path.join(directory, filepath)):
@@ -378,7 +378,7 @@ class FindObjectsWorker(DownloadWorker):
         return get_referenced_sha1(obj_file)
 
 
-def fetch_git(url, directory, jobs, retry, timeout, user_agent):
+def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     """ Dump a git repository into the output directory """
 
     assert os.path.isdir(directory), "%s is not a directory" % directory
@@ -388,7 +388,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
 
     session = requests.Session()
     session.verify = False
-    session.headers = {"User-Agent": user_agent}
+    session.headers = http_headers
     session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
     if os.listdir(directory):
@@ -435,7 +435,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
             [".git/", ".gitignore"],
             RecursiveDownloadWorker,
             jobs,
-            args=(url, directory, retry, timeout, user_agent),
+            args=(url, directory, retry, timeout, http_headers),
         )
 
         printf("[-] Running git checkout .\n")
@@ -469,7 +469,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
         tasks,
         DownloadWorker,
         jobs,
-        args=(url, directory, retry, timeout, user_agent),
+        args=(url, directory, retry, timeout, http_headers),
     )
 
     # find refs
@@ -498,7 +498,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
         tasks,
         FindRefsWorker,
         jobs,
-        args=(url, directory, retry, timeout, user_agent),
+        args=(url, directory, retry, timeout, http_headers),
     )
 
     # find packs
@@ -521,7 +521,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
         tasks,
         DownloadWorker,
         jobs,
-        args=(url, directory, retry, timeout, user_agent),
+        args=(url, directory, retry, timeout, http_headers),
     )
 
     # find objects
@@ -589,7 +589,7 @@ def fetch_git(url, directory, jobs, retry, timeout, user_agent):
         objs,
         FindObjectsWorker,
         jobs,
-        args=(url, directory, retry, timeout, user_agent),
+        args=(url, directory, retry, timeout, http_headers),
         tasks_done=packed_objs,
     )
 
@@ -639,19 +639,39 @@ if __name__ == "__main__":
         default="Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
         help="user-agent to use for requests",
     )
+    parser.add_argument(
+        "-H",
+        "--header",
+        type=str,
+        action="append",
+        help="additional http headers, e.g `NAME=VALUE`",
+    )
     args = parser.parse_args()
 
     # jobs
     if args.jobs < 1:
-        parser.error("invalid number of jobs")
+        parser.error("invalid number of jobs, got `%d`" % args.jobs)
 
     # retry
     if args.retry < 1:
-        parser.error("invalid number of retries")
+        parser.error("invalid number of retries, got `%d`" % args.retry)
 
     # timeout
     if args.timeout < 1:
-        parser.error("invalid timeout")
+        parser.error("invalid timeout, got `%d`" % args.timeout)
+
+    # header
+    http_headers = {"User-Agent": args.user_agent}
+    if args.header:
+        for header in args.header:
+            tokens = header.split("=", maxsplit=1)
+            if len(tokens) != 2:
+                parser.error(
+                    "http header must have the form NAME=VALUE, got `%s`"
+                    % header
+                )
+            name, value = tokens
+            http_headers[name.strip()] = value.strip()
 
     # proxy
     if args.proxy:
@@ -671,14 +691,14 @@ if __name__ == "__main__":
                 break
 
         if not proxy_valid:
-            parser.error("invalid proxy")
+            parser.error("invalid proxy, got `%s`" % args.proxy)
 
     # output directory
     if not os.path.exists(args.directory):
         os.makedirs(args.directory)
 
     if not os.path.isdir(args.directory):
-        parser.error("%s is not a directory" % args.directory)
+        parser.error("`%s` is not a directory" % args.directory)
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -690,6 +710,6 @@ if __name__ == "__main__":
             args.jobs,
             args.retry,
             args.timeout,
-            args.user_agent,
+            http_headers,
         )
     )

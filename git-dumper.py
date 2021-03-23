@@ -412,7 +412,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     if not valid:
         printf(error_message, url, "/.git/HEAD", file=sys.stderr)
         return 1
-    elif not response.text.startswith("ref:"):
+    elif not re.match(r'^(ref:.*|[0-9a-f]{40}$)', response.text.strip()):
         printf(
             "error: %s/.git/HEAD is not a git HEAD file\n",
             url,

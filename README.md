@@ -2,6 +2,13 @@
 
 A tool to dump a git repository from a website.
 
+## Install
+
+This can be installed easily with pip:
+```
+pip install git-dumper
+```
+
 ## Usage
 
 ```
@@ -30,13 +37,19 @@ optional arguments:
 ### Example
 
 ```
-./git_dumper.py http://website.com/.git ~/website
+git_dumper http://website.com/.git ~/website
 ```
 
-## Install the dependencies
+## Build from source
 
+Simply install the dependencies with pip:
 ```
 pip install -r requirements.txt
+```
+
+Then, simply use:
+```
+./git_dumper.py http://website.com/.git ~/website
 ```
 
 ## How does it work?

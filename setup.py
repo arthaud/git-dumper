@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 from setuptools import setup, find_packages
-from pathlib import Path
 
 setup(
     name='git-dumper',
-    version='1.0',
+    version='1.0.2',
     py_modules=['git_dumper'],
     entry_points={
         'console_scripts': [
@@ -17,7 +16,12 @@ setup(
     license='MIT',
     keywords='dump git repository security vulnerability ctf',
     url='https://github.com/arthaud/git-dumper',
-    install_requires=Path('requirements.txt').read_text().strip().split('\n'),
+    install_requires=[
+        'PySocks',
+        'requests',
+        'beautifulsoup4',
+        'dulwich',
+    ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'License :: OSI Approved :: MIT License',

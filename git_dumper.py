@@ -603,9 +603,9 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     return 0
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
-        usage="%(prog)s [options] URL DIR",
+        usage="git-dumper [options] URL DIR",
         description="Dump a git repository from a website.",
     )
     parser.add_argument("url", metavar="URL", help="url")
@@ -713,3 +713,7 @@ if __name__ == "__main__":
             http_headers,
         )
     )
+
+
+if __name__ == "__main__":
+    main()

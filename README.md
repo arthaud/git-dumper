@@ -5,7 +5,7 @@ A tool to dump a git repository from a website.
 ## Usage
 
 ```
-usage: git-dumper.py [options] URL DIR
+usage: git-dumper [options] URL DIR
 
 Dump a git repository from a website.
 
@@ -30,7 +30,7 @@ optional arguments:
 ### Example
 
 ```
-./git-dumper.py http://website.com/.git ~/website
+./git_dumper.py http://website.com/.git ~/website
 ```
 
 ## Install the dependencies

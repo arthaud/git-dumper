@@ -37,7 +37,7 @@ optional arguments:
 ### Example
 
 ```
-git_dumper http://website.com/.git ~/website
+git-dumper http://website.com/.git ~/website
 ```
 
 ## Build from source

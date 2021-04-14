@@ -102,6 +102,8 @@ def get_referenced_sha1(obj_file):
             objs.append(item.sha.decode())
     elif isinstance(obj_file, dulwich.objects.Blob):
         pass
+    elif isinstance(obj_file, dulwich.objects.Tag):
+        pass
     else:
         printf(
             "error: unexpected object type: %r\n" % obj_file, file=sys.stderr

@@ -30,7 +30,10 @@ def printf(fmt, *args, file=sys.stdout):
 
 def is_html(response):
     """ Return True if the response is a HTML webpage """
-    return "text/html" in response.headers["Content-Type"]
+    return (
+        "Content-Type" in response.headers
+        and "text/html" in response.headers["Content-Type"]
+    )
 
 
 def get_indexed_files(response):

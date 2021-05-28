@@ -9,8 +9,10 @@ import socket
 import subprocess
 import sys
 import traceback
+
 import urllib.parse
 import urllib3
+urllib3.disable_warnings()
 
 import bs4
 import dulwich.index

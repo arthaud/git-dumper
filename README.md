@@ -40,6 +40,13 @@ optional arguments:
 git-dumper http://website.com/.git ~/website
 ```
 
+### Disclaimer
+
+**Use this software at your own risk!**
+
+You should know that if the repository you are downloading is controlled by an attacker,
+this could lead to remote code execution on your machine.
+
 ## Build from source
 
 Simply install the dependencies with pip:

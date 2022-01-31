@@ -36,19 +36,31 @@ def is_html(response):
     )
 
 
+def is_safe_path(path):
+    """ Prevent directory traversal attacks """
+    if path.startswith("/"):
+        return False
+
+    safe_path = os.path.expanduser("~")
+    return (
+        os.path.commonpath(
+            (os.path.realpath(os.path.join(safe_path, path)), safe_path)
+        )
+        == safe_path
+    )
+
+
 def get_indexed_files(response):
     """ Return all the files in the directory index webpage """
     html = bs4.BeautifulSoup(response.text, "html.parser")
     files = []
-    bad = {".", "..", "../"}
 
     for link in html.find_all("a"):
         url = urllib.parse.urlparse(link.get("href"))
 
         if (
             url.path
-            and url.path not in bad
-            and not url.path.startswith("/")
+            and is_safe_path(url.path)
             and not url.scheme
             and not url.netloc
         ):
@@ -337,7 +349,7 @@ class FindRefsWorker(DownloadWorker):
             r"(refs(/[a-zA-Z0-9\-\.\_\*]+)+)", response.text
         ):
             ref = ref[0]
-            if not ref.endswith("*"):
+            if not ref.endswith("*") and is_safe_path(ref):
                 tasks.append(".git/%s" % ref)
                 tasks.append(".git/logs/%s" % ref)
 
@@ -417,7 +429,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     if not valid:
         printf(error_message, url, "/.git/HEAD", file=sys.stderr)
         return 1
-    elif not re.match(r'^(ref:.*|[0-9a-f]{40}$)', response.text.strip()):
+    elif not re.match(r"^(ref:.*|[0-9a-f]{40}$)", response.text.strip()):
         printf(
             "error: %s/.git/HEAD is not a git HEAD file\n",
             url,

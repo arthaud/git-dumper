@@ -1,4 +1,4 @@
 PySocks
 requests
 beautifulsoup4
-dulwich
+dulwich==0.20.20

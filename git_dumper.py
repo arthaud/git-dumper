@@ -580,7 +580,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     if os.path.exists(index_path):
         index = dulwich.index.Index(index_path)
 
-        for entry in index.iterblobs():
+        for entry in index.iterobjects():
             objs.add(entry[1].decode())
 
     # use packs to find more objects to fetch, and objects that are packed

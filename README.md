@@ -32,6 +32,10 @@ optional arguments:
                         user-agent to use for requests
   -H HEADER, --header HEADER
                         additional http headers, e.g `NAME=VALUE`
+  --client-cert-p12 CLIENT_CERT_P12
+                        client certificate in PKCS#12 format
+  --client-cert-p12-password CLIENT_CERT_P12_PASSWORD
+                        password for the client certificate
 ```
 
 ### Example

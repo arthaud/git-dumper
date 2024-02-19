@@ -407,7 +407,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     session = requests.Session()
     session.verify = False
     session.headers = http_headers
-    session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
+    session.mount(url, Pkcs12Adapter(pkcs12_filename=args.client_cert_p12, pkcs12_password=args.client_cert_p12_password))
 
     if os.listdir(directory):
         printf("Warning: Destination '%s' is not empty\n", directory)

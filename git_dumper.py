@@ -18,6 +18,7 @@ import dulwich.objects
 import dulwich.pack
 import requests
 import socks
+from requests_pkcs12 import Pkcs12Adapter
 
 
 def printf(fmt, *args, file=sys.stdout):
@@ -226,7 +227,7 @@ class DownloadWorker(Worker):
         self.session.verify = False
         self.session.headers = http_headers
         self.session.mount(
-            url, requests.adapters.HTTPAdapter(max_retries=retry)
+            url, Pkcs12Adapter(pkcs12_filename=self.args.client_cert_p12, pkcs12_password=self.args.client_cert_p12_password)
         )
 
     def do_task(self, filepath, url, directory, retry, timeout, http_headers):
@@ -628,6 +629,8 @@ def main():
     parser.add_argument("url", metavar="URL", help="url")
     parser.add_argument("directory", metavar="DIR", help="output directory")
     parser.add_argument("--proxy", help="use the specified proxy")
+    parser.add_argument("--client-cert-p12", help="client certificate in PKCS#12")
+    parser.add_argument("--client-cert-p12-password", help="password for the client certificate")
     parser.add_argument(
         "-j",
         "--jobs",
@@ -716,6 +719,21 @@ def main():
 
     if not os.path.isdir(args.directory):
         parser.error("`%s` is not a directory" % args.directory)
+
+    # client certificate
+    if args.client_cert_p12:
+        if not os.path.exists(args.client_cert_p12):
+            parser.error(
+                "client certificate `%s` does not exist" % args.client_cert_p12
+            )
+
+        if not os.path.isfile(args.client_cert_p12):
+            parser.error(
+                "client certificate `%s` is not a file" % args.client_cert_p12
+            )
+
+        if args.client_cert_p12_password is None:
+            parser.error("client certificate password is required")
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

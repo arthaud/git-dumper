@@ -10,7 +10,9 @@ import subprocess
 import sys
 import traceback
 import urllib.parse
+
 import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 import bs4
 import dulwich.index
@@ -222,15 +224,16 @@ def process_tasks(initial_tasks, worker, jobs, args=(), tasks_done=None):
 class DownloadWorker(Worker):
     """ Download a list of files """
 
-    def init(self, url, directory, retry, timeout, http_headers):
+    def init(self, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
         self.session = requests.Session()
         self.session.verify = False
         self.session.headers = http_headers
-        self.session.mount(
-            url, Pkcs12Adapter(pkcs12_filename=self.args.client_cert_p12, pkcs12_password=self.args.client_cert_p12_password)
-        )
+        if client_cert_p12:
+            self.session.mount(url, Pkcs12Adapter(pkcs12_filename=client_cert_p12, pkcs12_password=client_cert_p12_password))
+        else:
+            self.session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
 
-    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
             return []
@@ -323,7 +326,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 class FindRefsWorker(DownloadWorker):
     """ Find refs/ """
 
-    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
         response = self.session.get(
             "%s/%s" % (url, filepath), allow_redirects=False, timeout=timeout
         )
@@ -360,7 +363,7 @@ class FindRefsWorker(DownloadWorker):
 class FindObjectsWorker(DownloadWorker):
     """ Find objects """
 
-    def do_task(self, obj, url, directory, retry, timeout, http_headers):
+    def do_task(self, obj, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
         filepath = ".git/objects/%s/%s" % (obj[:2], obj[2:])
 
         if os.path.isfile(os.path.join(directory, filepath)):
@@ -396,7 +399,7 @@ class FindObjectsWorker(DownloadWorker):
         return get_referenced_sha1(obj_file)
 
 
-def fetch_git(url, directory, jobs, retry, timeout, http_headers):
+def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
     """ Dump a git repository into the output directory """
 
     assert os.path.isdir(directory), "%s is not a directory" % directory
@@ -407,8 +410,10 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
     session = requests.Session()
     session.verify = False
     session.headers = http_headers
-    session.mount(url, Pkcs12Adapter(pkcs12_filename=args.client_cert_p12, pkcs12_password=args.client_cert_p12_password))
-
+    if client_cert_p12:
+        session.mount(url, Pkcs12Adapter(pkcs12_filename=client_cert_p12, pkcs12_password=client_cert_p12_password))
+    else:
+        session.mount(url, requests.adapters.HTTPAdapter(max_retries=retry))
     if os.listdir(directory):
         printf("Warning: Destination '%s' is not empty\n", directory)
 
@@ -487,7 +492,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
         tasks,
         DownloadWorker,
         jobs,
-        args=(url, directory, retry, timeout, http_headers),
+        args=(url, directory, retry, timeout, http_headers, client_cert_p12, client_cert_p12_password),
     )
 
     # find refs
@@ -516,7 +521,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
         tasks,
         FindRefsWorker,
         jobs,
-        args=(url, directory, retry, timeout, http_headers),
+        args=(url, directory, retry, timeout, http_headers, client_cert_p12, client_cert_p12_password),
     )
 
     # find packs
@@ -539,7 +544,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
         tasks,
         DownloadWorker,
         jobs,
-        args=(url, directory, retry, timeout, http_headers),
+        args=(url, directory, retry, timeout, http_headers, client_cert_p12, client_cert_p12_password),
     )
 
     # find objects
@@ -607,7 +612,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers):
         objs,
         FindObjectsWorker,
         jobs,
-        args=(url, directory, retry, timeout, http_headers),
+        args=(url, directory, retry, timeout, http_headers, client_cert_p12, client_cert_p12_password),
         tasks_done=packed_objs,
     )
 
@@ -746,6 +751,8 @@ def main():
             args.retry,
             args.timeout,
             http_headers,
+            args.client_cert_p12,
+            args.client_cert_p12_password
         )
     )
 

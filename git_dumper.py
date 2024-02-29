@@ -398,6 +398,21 @@ class FindObjectsWorker(DownloadWorker):
         return get_referenced_sha1(obj_file)
 
 
+def sanitize_file(filepath):
+    """ Inplace comment out possibly unsafe lines based on regex """
+    assert os.path.isfile(filepath), "%s is not a file" % filepath
+
+    UNSAFE=r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
+
+    with open(filepath, 'r+') as f:
+        content = f.read()
+        modified_content = re.sub(UNSAFE, '# \g<0>', content, flags=re.IGNORECASE)
+        if content != modified_content:
+            printf("Warning: '%s' file was altered\n" % filepath)
+            f.seek(0)
+            f.write(modified_content)
+
+
 def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
     """ Dump a git repository into the output directory """
 
@@ -463,9 +478,13 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
             jobs,
             args=(url, directory, retry, timeout, http_headers),
         )
+        
+        os.chdir(directory)
+
+        printf("[-] Sanitizing .git/config\n")
+        sanitize_file(".git/config")
 
         printf("[-] Running git checkout .\n")
-        os.chdir(directory)
         subprocess.check_call(["git", "checkout", "."])
         return 0
 

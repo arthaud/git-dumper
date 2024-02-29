@@ -427,7 +427,11 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
 
     # check for /.git/HEAD
     printf("[-] Testing %s/.git/HEAD ", url)
-    response = session.get("%s/.git/HEAD" % url, allow_redirects=False)
+    response = session.get(
+        "%s/.git/HEAD" % url, 
+        timeout=timeout, 
+        allow_redirects=False
+    )
     printf("[%d]\n", response.status_code)
 
     valid, error_message = verify_response(response)

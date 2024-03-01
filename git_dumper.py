@@ -485,11 +485,11 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
         sanitize_file(".git/config")
 
         printf("[-] Running git checkout .\n")
-        ENV = os.environ
+        environment = os.environ.copy()
         configured_proxy = socks.getdefaultproxy()
-        if configured_proxy[0] > 0:
-            ENV["ALL_PROXY"] = f"http.proxy={["http", "socks4h", "socks5h"][configured_proxy[0]]}" + f"://{configured_proxy[1]}:{configured_proxy[2]}"
-        subprocess.check_call(["git", "checkout", "."], env=ENV)
+        if configured_proxy is not None:
+            environment["ALL_PROXY"] = f"http.proxy={["http", "socks4h", "socks5h"][configured_proxy[0]]}" + f"://{configured_proxy[1]}:{configured_proxy[2]}"
+        subprocess.check_call(["git", "checkout", "."], env=environment)
         return 0
 
     # no directory listing

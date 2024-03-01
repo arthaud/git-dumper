@@ -674,7 +674,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     subprocess.call(
         ["git", "checkout", "."], 
         stderr=open(os.devnull, "wb"),
-        env=ENV
+        env=environment
     )
 
     return 0

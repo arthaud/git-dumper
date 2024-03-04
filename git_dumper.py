@@ -461,6 +461,12 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
         )
         return 1
 
+    # set up environment to ensure proxy usage
+    environment = os.environ.copy()
+    configured_proxy = socks.getdefaultproxy()
+    if configured_proxy is not None:
+        environment["ALL_PROXY"] = f"http.proxy={["http", "socks4h", "socks5h"][configured_proxy[0]]}" + f"://{configured_proxy[1]}:{configured_proxy[2]}"
+
     # check for directory listing
     printf("[-] Testing %s/.git/ ", url)
     response = session.get("%s/.git/" % url, allow_redirects=False)
@@ -485,10 +491,6 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
         sanitize_file(".git/config")
 
         printf("[-] Running git checkout .\n")
-        environment = os.environ.copy()
-        configured_proxy = socks.getdefaultproxy()
-        if configured_proxy is not None:
-            environment["ALL_PROXY"] = f"http.proxy={["http", "socks4h", "socks5h"][configured_proxy[0]]}" + f"://{configured_proxy[1]}:{configured_proxy[2]}"
         subprocess.check_call(["git", "checkout", "."], env=environment)
         return 0
 
@@ -669,6 +671,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     # git checkout
     printf("[-] Running git checkout .\n")
     os.chdir(directory)
+    sanitize_file(".git/config")
 
     # ignore errors
     subprocess.call(

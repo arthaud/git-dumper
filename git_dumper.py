@@ -465,12 +465,14 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     environment = os.environ.copy()
     configured_proxy = socks.getdefaultproxy()
     if configured_proxy is not None:
-        environment["ALL_PROXY"] = f"http.proxy={["http", "socks4h", "socks5h"][configured_proxy[0]]}" + f"://{configured_proxy[1]}:{configured_proxy[2]}"
+        proxy_types = ["http", "socks4h", "socks5h"]
+        environment["ALL_PROXY"] = f"http.proxy={proxy_types[configured_proxy[0]]}://{configured_proxy[1]}:{configured_proxy[2]}"
 
     # check for directory listing
     printf("[-] Testing %s/.git/ ", url)
     response = session.get("%s/.git/" % url, allow_redirects=False)
     printf("[%d]\n", response.status_code)
+
 
     if (
         response.status_code == 200

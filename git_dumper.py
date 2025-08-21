@@ -406,7 +406,7 @@ def sanitize_file(filepath):
 
     with open(filepath, 'r+') as f:
         content = f.read()
-        modified_content = re.sub(UNSAFE, '# \g<0>', content, flags=re.IGNORECASE)
+        modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
         if content != modified_content:
             printf("Warning: '%s' file was altered\n" % filepath)
             f.seek(0)

@@ -762,6 +762,12 @@ def main():
         proxy_valid = False
 
         for pattern, proxy_type in [
+            # Authenticated proxies with username:password@host:port
+            # Use greedy match for password to handle special chars (last @ is the separator)
+            (r"^socks5://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_SOCKS5),
+            (r"^socks4://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_SOCKS4),
+            (r"^http://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_HTTP),
+            # Non-authenticated proxies (backward compatibility)
             (r"^socks5:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS5),
             (r"^socks4:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS4),
             (r"^http://(.*):(\d+)$", socks.PROXY_TYPE_HTTP),
@@ -769,7 +775,15 @@ def main():
         ]:
             m = re.match(pattern, args.proxy)
             if m:
-                socks.setdefaultproxy(proxy_type, m.group(1), int(m.group(2)))
+                groups = m.groups()
+                # Check if this is an authenticated proxy (4 groups: user, pass, host, port)
+                if len(groups) == 4:
+                    username, password, host, port = groups
+                    socks.setdefaultproxy(proxy_type, host, int(port), True, username, password)
+                # Non-authenticated proxy (2 groups: host, port)
+                else:
+                    host, port = groups
+                    socks.setdefaultproxy(proxy_type, host, int(port))
                 socket.socket = socks.socksocket
                 proxy_valid = True
                 break

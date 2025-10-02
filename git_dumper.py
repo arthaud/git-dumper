@@ -402,15 +402,16 @@ def sanitize_file(filepath):
     """ Inplace comment out possibly unsafe lines based on regex """
     assert os.path.isfile(filepath), "%s is not a file" % filepath
 
-    UNSAFE=r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
+    UNSAFE=r"^(\s*)(fsmonitor|sshCommand|askPass|editor|pager)(\s*=)"
 
     with open(filepath, 'r+') as f:
         content = f.read()
-        modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
+        modified_content = re.sub(UNSAFE, r'\1# \2\3', content, flags=re.IGNORECASE|re.MULTILINE)
         if content != modified_content:
             printf("Warning: '%s' file was altered\n" % filepath)
             f.seek(0)
             f.write(modified_content)
+            f.truncate()
 
 
 def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):

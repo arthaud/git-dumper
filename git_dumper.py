@@ -38,6 +38,49 @@ def is_html(response):
     )
 
 
+def validate_git_content(content, filepath):
+    """
+    Validate that content appears to be valid git data.
+
+    Returns True if content looks like valid git data, False if it looks like HTML/error page.
+    This allows git content served with incorrect content-type headers to still be accepted.
+    """
+    # Decode content if it's bytes
+    try:
+        text_content = content.decode('utf-8', errors='ignore') if isinstance(content, bytes) else content
+    except:
+        # Binary content that can't be decoded - assume it's valid (e.g., packed objects)
+        return True
+
+    # Check if it looks like HTML (common error pages)
+    text_lower = text_content.lower().strip()
+    if text_lower.startswith('<html') or text_lower.startswith('<!doctype html'):
+        return False
+    if '<html' in text_lower[:200]:  # Check first 200 chars for HTML tags
+        return False
+
+    # For HEAD file, validate format
+    if filepath.endswith('HEAD'):
+        # Valid HEAD is either "ref: refs/..." or a 40-char hex SHA1
+        stripped = text_content.strip()
+        if stripped.startswith('ref:'):
+            return True
+        if re.match(r'^[a-f0-9]{40}$', stripped):
+            return True
+        return False
+
+    # For refs files, validate SHA1 format
+    if '/refs/' in filepath or filepath.startswith('refs/'):
+        stripped = text_content.strip()
+        if re.match(r'^[a-f0-9]{40}$', stripped):
+            return True
+        return False
+
+    # For other git files (config, objects, etc.), allow any content
+    # Objects are binary and will be validated later by dulwich
+    return True
+
+
 def is_safe_path(path):
     """ Prevent directory traversal attacks """
     if path.startswith("/"):
@@ -71,7 +114,13 @@ def get_indexed_files(response):
     return files
 
 
-def verify_response(response):
+def verify_response(response, filepath=None):
+    """
+    Verify that a response is valid.
+
+    If filepath is provided, validates git content even when served with HTML content-type.
+    This allows dumping from misconfigured servers that serve git files with wrong headers.
+    """
     if response.status_code != 200:
         return (
             False,
@@ -81,13 +130,18 @@ def verify_response(response):
         )
     elif (
         "Content-Length" in response.headers
-        and response.headers["Content-Length"] == 0
+        and int(response.headers["Content-Length"]) == 0
     ):
         return False, "[-] %s/%s responded with a zero-length body\n"
     elif (
         "Content-Type" in response.headers
         and "text/html" in response.headers["Content-Type"]
     ):
+        # If we have a filepath, validate the content itself rather than trusting headers
+        if filepath and hasattr(response, 'content'):
+            if validate_git_content(response.content, filepath):
+                # Content looks like valid git data despite HTML content-type
+                return True, True
         return False, "[-] %s/%s responded with HTML\n"
     else:
         return True, True
@@ -252,7 +306,7 @@ class DownloadWorker(Worker):
                 response.status_code,
             )
 
-            valid, error_message = verify_response(response)
+            valid, error_message = verify_response(response, filepath=filepath)
             if not valid:
                 printf(error_message, url, filepath, file=sys.stderr)
                 return []
@@ -306,7 +360,7 @@ class RecursiveDownloadWorker(DownloadWorker):
                     for filename in get_indexed_files(response)
                 ]
             else:  # file
-                valid, error_message = verify_response(response)
+                valid, error_message = verify_response(response, filepath=filepath)
                 if not valid:
                     printf(error_message, url, filepath, file=sys.stderr)
                     return []
@@ -333,7 +387,7 @@ class FindRefsWorker(DownloadWorker):
             "[-] Fetching %s/%s [%d]\n", url, filepath, response.status_code
         )
 
-        valid, error_message = verify_response(response)
+        valid, error_message = verify_response(response, filepath=filepath)
         if not valid:
             printf(error_message, url, filepath, file=sys.stderr)
             return []
@@ -380,7 +434,7 @@ class FindObjectsWorker(DownloadWorker):
                 response.status_code,
             )
 
-            valid, error_message = verify_response(response)
+            valid, error_message = verify_response(response, filepath=filepath)
             if not valid:
                 printf(error_message, url, filepath, file=sys.stderr)
                 return []
@@ -449,7 +503,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     )
     printf("[%d]\n", response.status_code)
 
-    valid, error_message = verify_response(response)
+    valid, error_message = verify_response(response, filepath=".git/HEAD")
     if not valid:
         printf(error_message, url, "/.git/HEAD", file=sys.stderr)
         return 1

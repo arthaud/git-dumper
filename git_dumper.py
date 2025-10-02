@@ -270,6 +270,17 @@ class DownloadWorker(Worker):
 
 class RecursiveDownloadWorker(DownloadWorker):
     """ Download a directory recursively """
+    
+    # Maximum number of redirects to follow for a single file
+    MAX_REDIRECTS = 5
+
+    def init(self, url, directory, retry, timeout, http_headers):
+        """Initialize worker with redirect tracking"""
+        super().init(url, directory, retry, timeout, http_headers)
+        # Track all paths we've seen redirects for (to detect circular redirects)
+        self.redirect_chain = set()
+        # Track redirect count per path
+        self.redirect_counts = {}
 
     def do_task(self, filepath, url, directory, retry, timeout, http_headers):
         if os.path.isfile(os.path.join(directory, filepath)):
@@ -291,12 +302,73 @@ class RecursiveDownloadWorker(DownloadWorker):
                 response.status_code,
             )
 
+            # Check for redirect responses
             if (
                 response.status_code in (301, 302)
                 and "Location" in response.headers
-                and response.headers["Location"].endswith(filepath + "/")
             ):
-                return [filepath + "/"]
+                location = response.headers["Location"]
+                
+                # Check if this is a directory redirect (file -> file/)
+                # or a redirect to the same path (which would cause infinite loop)
+                is_dir_redirect = location.endswith(filepath + "/")
+                is_same_path_redirect = (location == filepath or 
+                                        location == filepath + "/" or
+                                        location.endswith("/" + filepath) or
+                                        location.endswith("/" + filepath + "/"))
+                
+                if is_dir_redirect or is_same_path_redirect:
+                    redirected_path = filepath + "/" if is_dir_redirect else filepath
+                    
+                    # Check if we've already seen this path in the redirect chain (circular redirect)
+                    if redirected_path in self.redirect_chain or filepath in self.redirect_chain:
+                        printf(
+                            "[-] Circular redirect detected for %s/%s, stopping\n",
+                            url,
+                            filepath,
+                            file=sys.stderr
+                        )
+                        # Clear the chain for this path since we're stopping
+                        self.redirect_chain.discard(redirected_path)
+                        self.redirect_chain.discard(filepath)
+                        return []
+                    
+                    # Check if we've exceeded max redirects for any path
+                    redirect_count = self.redirect_counts.get(filepath, 0) + 1
+                    if redirect_count > self.MAX_REDIRECTS:
+                        printf(
+                            "[-] Too many redirects for %s/%s (max: %d), stopping\n",
+                            url,
+                            filepath,
+                            self.MAX_REDIRECTS,
+                            file=sys.stderr
+                        )
+                        # Clear tracking for this path
+                        self.redirect_chain.discard(filepath)
+                        return []
+                    
+                    # Track this redirect
+                    self.redirect_chain.add(filepath)
+                    if redirected_path != filepath:
+                        self.redirect_chain.add(redirected_path)
+                    self.redirect_counts[filepath] = redirect_count
+                    
+                    return [redirected_path]
+                else:
+                    # Redirect to a completely different location (e.g., homepage)
+                    # Don't follow these redirects
+                    printf(
+                        "[-] Redirect to unrelated location %s for %s/%s, stopping\n",
+                        location,
+                        url,
+                        filepath,
+                        file=sys.stderr
+                    )
+                    return []
+
+            # If we successfully processed a path, remove it from redirect chain
+            if filepath in self.redirect_chain:
+                self.redirect_chain.discard(filepath)
 
             if filepath.endswith("/"):  # directory index
                 assert is_html(response)
@@ -320,6 +392,7 @@ class RecursiveDownloadWorker(DownloadWorker):
                         f.write(chunk)
 
                 return []
+
 
 
 class FindRefsWorker(DownloadWorker):

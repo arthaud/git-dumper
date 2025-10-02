@@ -368,29 +368,33 @@ class FindObjectsWorker(DownloadWorker):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
         else:
-            response = self.session.get(
-                "%s/%s" % (url, filepath),
-                allow_redirects=False,
-                timeout=timeout,
-            )
-            printf(
-                "[-] Fetching %s/%s [%d]\n",
-                url,
-                filepath,
-                response.status_code,
-            )
+            with closing(
+                self.session.get(
+                    "%s/%s" % (url, filepath),
+                    allow_redirects=False,
+                    stream=True,
+                    timeout=timeout,
+                )
+            ) as response:
+                printf(
+                    "[-] Fetching %s/%s [%d]\n",
+                    url,
+                    filepath,
+                    response.status_code,
+                )
 
-            valid, error_message = verify_response(response)
-            if not valid:
-                printf(error_message, url, filepath, file=sys.stderr)
-                return []
+                valid, error_message = verify_response(response)
+                if not valid:
+                    printf(error_message, url, filepath, file=sys.stderr)
+                    return []
 
-            abspath = os.path.abspath(os.path.join(directory, filepath))
-            create_intermediate_dirs(abspath)
+                abspath = os.path.abspath(os.path.join(directory, filepath))
+                create_intermediate_dirs(abspath)
 
-            # write file
-            with open(abspath, "wb") as f:
-                f.write(response.content)
+                # write file
+                with open(abspath, "wb") as f:
+                    for chunk in response.iter_content(4096):
+                        f.write(chunk)
 
         abspath = os.path.abspath(os.path.join(directory, filepath))
         # parse object file to find other objects

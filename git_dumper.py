@@ -130,6 +130,61 @@ def get_referenced_sha1(obj_file):
     return objs
 
 
+def parse_proxy(proxy_string):
+    """
+    Parse proxy string and return proxy configuration.
+
+    Supports both authenticated and non-authenticated proxies:
+    - Authenticated: protocol://username:password@host:port
+    - Non-authenticated: protocol://host:port or host:port
+
+    Args:
+        proxy_string: Proxy URL string
+
+    Returns:
+        dict with keys: type, host, port, username (optional), password (optional), authenticated
+        None if proxy_string is invalid
+    """
+    proxy_patterns = [
+        # Authenticated proxies with username:password@host:port
+        # Use greedy match for password to handle special chars (last @ is the separator)
+        (r"^socks5://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_SOCKS5),
+        (r"^socks4://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_SOCKS4),
+        (r"^http://([^:]+):(.+)@([^:]+):(\d+)$", socks.PROXY_TYPE_HTTP),
+        # Non-authenticated proxies (backward compatibility)
+        (r"^socks5:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS5),
+        (r"^socks4:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS4),
+        (r"^http://(.*):(\d+)$", socks.PROXY_TYPE_HTTP),
+        (r"^(.*):(\d+)$", socks.PROXY_TYPE_SOCKS5),
+    ]
+
+    for pattern, proxy_type in proxy_patterns:
+        m = re.match(pattern, proxy_string)
+        if m:
+            groups = m.groups()
+            if len(groups) == 4:
+                # Authenticated
+                username, password, host, port = groups
+                return {
+                    'type': proxy_type,
+                    'host': host,
+                    'port': int(port),
+                    'username': username,
+                    'password': password,
+                    'authenticated': True
+                }
+            else:
+                # Non-authenticated
+                host, port = groups
+                return {
+                    'type': proxy_type,
+                    'host': host,
+                    'port': int(port),
+                    'authenticated': False
+                }
+    return None
+
+
 class Worker(multiprocessing.Process):
     """ Worker for process_tasks """
 
@@ -759,23 +814,27 @@ def main():
 
     # proxy
     if args.proxy:
-        proxy_valid = False
+        proxy_config = parse_proxy(args.proxy)
 
-        for pattern, proxy_type in [
-            (r"^socks5:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS5),
-            (r"^socks4:(.*):(\d+)$", socks.PROXY_TYPE_SOCKS4),
-            (r"^http://(.*):(\d+)$", socks.PROXY_TYPE_HTTP),
-            (r"^(.*):(\d+)$", socks.PROXY_TYPE_SOCKS5),
-        ]:
-            m = re.match(pattern, args.proxy)
-            if m:
-                socks.setdefaultproxy(proxy_type, m.group(1), int(m.group(2)))
-                socket.socket = socks.socksocket
-                proxy_valid = True
-                break
-
-        if not proxy_valid:
+        if proxy_config is None:
             parser.error("invalid proxy, got `%s`" % args.proxy)
+
+        if proxy_config['authenticated']:
+            socks.setdefaultproxy(
+                proxy_config['type'],
+                proxy_config['host'],
+                proxy_config['port'],
+                True,
+                proxy_config['username'],
+                proxy_config['password']
+            )
+        else:
+            socks.setdefaultproxy(
+                proxy_config['type'],
+                proxy_config['host'],
+                proxy_config['port']
+            )
+        socket.socket = socks.socksocket
 
     # output directory
     if not os.path.exists(args.directory):

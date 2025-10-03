@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """Tests for git_dumper.py - BitBucket support and HEAD validation"""
-import os
-import sys
 import unittest
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import git_dumper  # noqa: E402
+import git_dumper
 
 
 class TestHEADValidation(unittest.TestCase):

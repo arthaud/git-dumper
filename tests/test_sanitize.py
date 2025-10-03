@@ -2,33 +2,12 @@
 """Tests for git config sanitization to prevent RCE attacks."""
 
 import os
-import re
 import sys
 import tempfile
 import unittest
 
-
-def printf(fmt, *args, file=sys.stdout):
-    if args:
-        fmt = fmt % args
-    file.write(fmt)
-    file.flush()
-
-
-def sanitize_file(filepath):
-    """ Inplace comment out possibly unsafe lines based on regex """
-    assert os.path.isfile(filepath), "%s is not a file" % filepath
-
-    UNSAFE=r"^(\s*)(fsmonitor|sshCommand|askPass|editor|pager)(\s*=)"
-
-    with open(filepath, 'r+') as f:
-        content = f.read()
-        modified_content = re.sub(UNSAFE, r'\1# \2\3', content, flags=re.IGNORECASE|re.MULTILINE)
-        if content != modified_content:
-            printf("Warning: '%s' file was altered\n" % filepath)
-            f.seek(0)
-            f.write(modified_content)
-            f.truncate()
+# Import functions from git_dumper module instead of duplicating them
+from git_dumper import printf, sanitize_file
 
 
 class TestSanitizeFile(unittest.TestCase):

@@ -2,12 +2,11 @@
 """Tests for git config sanitization to prevent RCE attacks."""
 
 import os
-import sys
 import tempfile
 import unittest
 
 # Import functions from git_dumper module instead of duplicating them
-from git_dumper import printf, sanitize_file
+from git_dumper import sanitize_file
 
 
 class TestSanitizeFile(unittest.TestCase):

@@ -5,7 +5,6 @@ This test verifies that corrupted .git/index files don't crash git-dumper.
 Tests simulate various corruption scenarios that can occur during network errors.
 """
 import os
-import sys
 import tempfile
 import shutil
 import struct
@@ -83,7 +82,7 @@ class TestIndexParsingErrorHandling(unittest.TestCase):
                     if len(data) < 8:
                         raise struct.error("unpack requires a buffer of 8 bytes")
                     struct.unpack(">LL", data)
-            except (struct.error, AssertionError, OSError) as e:
+            except (struct.error, AssertionError, OSError):
                 # Should catch and handle gracefully
                 error_caught = True
 

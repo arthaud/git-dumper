@@ -6,6 +6,7 @@ import os
 import os.path
 import re
 import socket
+import struct
 import subprocess
 import sys
 import traceback
@@ -638,10 +639,17 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     # use .git/index to find objects
     index_path = os.path.join(directory, ".git", "index")
     if os.path.exists(index_path):
-        index = dulwich.index.Index(index_path)
+        try:
+            index = dulwich.index.Index(index_path)
 
-        for entry in index.iterobjects():
-            objs.add(entry[1].decode())
+            for entry in index.iterobjects():
+                objs.add(entry[1].decode())
+        except (struct.error, AssertionError, OSError) as e:
+            # Handle corrupted index files (e.g., from incomplete downloads during SSL errors)
+            printf(
+                "[-] Warning: Failed to parse .git/index (file may be corrupted): %s\n" % str(e),
+                file=sys.stderr
+            )
 
     # use packs to find more objects to fetch, and objects that are packed
     pack_file_dir = os.path.join(directory, ".git", "objects", "pack")

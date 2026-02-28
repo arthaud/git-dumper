@@ -443,8 +443,8 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     # check for /.git/HEAD
     printf("[-] Testing %s/.git/HEAD ", url)
     response = session.get(
-        "%s/.git/HEAD" % url, 
-        timeout=timeout, 
+        "%s/.git/HEAD" % url,
+        timeout=timeout,
         allow_redirects=False
     )
     printf("[%d]\n", response.status_code)
@@ -486,7 +486,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
             jobs,
             args=(url, directory, retry, timeout, http_headers),
         )
-        
+
         os.chdir(directory)
 
         printf("[-] Sanitizing .git/config\n")
@@ -652,8 +652,8 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
                 pack_idx_path = os.path.join(
                     pack_file_dir, filename[:-5] + ".idx"
                 )
-                pack_data = dulwich.pack.PackData(pack_data_path)
-                pack_idx = dulwich.pack.load_pack_index(pack_idx_path)
+                pack_data = dulwich.pack.PackData(pack_data_path, object_format=dulwich.object_format.DEFAULT_OBJECT_FORMAT)
+                pack_idx = dulwich.pack.load_pack_index(pack_idx_path, object_format=dulwich.object_format.DEFAULT_OBJECT_FORMAT)
                 pack = dulwich.pack.Pack.from_objects(pack_data, pack_idx)
 
                 for obj_file in pack.iterobjects():
@@ -677,7 +677,7 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
 
     # ignore errors
     subprocess.call(
-        ["git", "checkout", "."], 
+        ["git", "checkout", "."],
         stderr=open(os.devnull, "wb"),
         env=environment
     )

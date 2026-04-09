@@ -38,6 +38,50 @@ def is_html(response):
     )
 
 
+def is_valid_head(content):
+    """
+    Validate .git/HEAD content for various git hosting platforms.
+
+    Supports:
+    - Standard ref format: "ref: refs/heads/branch"
+    - Detached HEAD: 40-character SHA1 hash
+    - BitBucket and other platforms with extra whitespace
+
+    Args:
+        content: The raw content from .git/HEAD
+
+    Returns:
+        True if valid HEAD format, False otherwise
+    """
+    if not content:
+        return False
+
+    # Strip all surrounding whitespace (spaces, newlines, etc.)
+    stripped = content.strip()
+
+    if not stripped:
+        return False
+
+    # Check for ref format: "ref: refs/..."
+    if stripped.startswith("ref:"):
+        # Must have something after "ref:"
+        ref_path = stripped[4:].strip()
+        if ref_path and ref_path.startswith("refs/"):
+            return True
+        return False
+
+    # Check for detached HEAD (40-character hex SHA1)
+    if len(stripped) == 40:
+        try:
+            # Verify it's valid hex
+            int(stripped, 16)
+            return True
+        except ValueError:
+            return False
+
+    return False
+
+
 def is_safe_path(path):
     """ Prevent directory traversal attacks """
     if path.startswith("/"):
@@ -453,10 +497,25 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
     if not valid:
         printf(error_message, url, "/.git/HEAD", file=sys.stderr)
         return 1
-    elif not re.match(r"^(ref:.*|[0-9a-f]{40}$)", response.text.strip()):
+    elif not is_valid_head(response.text):
         printf(
-            "error: %s/.git/HEAD is not a git HEAD file\n",
+            "error: %s/.git/HEAD is not a valid git HEAD file\n",
             url,
+            file=sys.stderr,
+        )
+        printf(
+            "error: HEAD content: %s\n",
+            repr(response.text[:100]),
+            file=sys.stderr,
+        )
+        printf(
+            "error: This may indicate the repository uses an "
+            "unsupported format.\n",
+            file=sys.stderr,
+        )
+        printf(
+            "error: Please report this issue at "
+            "https://github.com/arthaud/git-dumper/issues\n",
             file=sys.stderr,
         )
         return 1

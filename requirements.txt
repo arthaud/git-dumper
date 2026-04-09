@@ -1,4 +1,4 @@
-PySocks
+PySocks>=1.7.1
 requests
 beautifulsoup4
 dulwich

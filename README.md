@@ -36,6 +36,8 @@ optional arguments:
                         client certificate in PKCS#12 format
   --client-cert-p12-password CLIENT_CERT_P12_PASSWORD
                         password for the client certificate
+  -b BRANCH, --branch BRANCH
+                        additional branch name to check for (repeatable)
 ```
 
 ### Example
@@ -43,6 +45,7 @@ optional arguments:
 ```
 git-dumper http://website.com/.git ~/website
 ```
+
 
 ### Disclaimer
 

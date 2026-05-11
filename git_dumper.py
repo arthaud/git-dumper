@@ -413,7 +413,7 @@ def sanitize_file(filepath):
             f.write(modified_content)
 
 
-def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
+def fetch_git(url, directory, jobs, retry, timeout, http_headers, branches=None, client_cert_p12=None, client_cert_p12_password=None):
     """ Dump a git repository into the output directory """
 
     assert os.path.isdir(directory), "%s is not a directory" % directory
@@ -570,6 +570,23 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, client_cert_p1
         ".git/refs/wip/index/refs/heads/production",
         ".git/refs/wip/index/refs/heads/development"
     ]
+
+    # include user-specified branches
+    if branches:
+        for branch in branches:
+            if not re.match(r'^[A-Za-z0-9\-\._]+$', branch):
+                printf("Warning: ignoring invalid branch name '%s'\n", branch)
+                continue
+            tasks.extend(
+                [
+                    f".git/logs/refs/heads/{branch}",
+                    f".git/refs/heads/{branch}",
+                    f".git/logs/refs/remotes/origin/{branch}",
+                    f".git/refs/remotes/origin/{branch}",
+                    f".git/refs/wip/wtree/refs/heads/{branch}",
+                    f".git/refs/wip/index/refs/heads/{branch}",
+                ]
+            )
 
     process_tasks(
         tasks,
@@ -730,6 +747,13 @@ def main():
         action="append",
         help="additional http headers, e.g `NAME=VALUE`",
     )
+    parser.add_argument(
+        "-b",
+        "--branch",
+        dest="branches",
+        action="append",
+        help="additional branch names to check for, e.g. `-b dev -b prod`. The default branches (`main`, `master`, `staging`, `production`, `development`) are always checked.",
+    )
     args = parser.parse_args()
 
     # jobs
@@ -810,8 +834,9 @@ def main():
             args.retry,
             args.timeout,
             http_headers,
+            args.branches,
             args.client_cert_p12,
-            args.client_cert_p12_password
+            args.client_cert_p12_password,
         )
     )
 

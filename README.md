@@ -4,23 +4,10 @@ A tool to dump a git repository from a website.
 
 ## Install
 
-To install `git-dumper`, it is recommended to use a Python virtual environment to avoid conflicts with your system's packages (especially on Linux distributions enforcing **PEP 668**).
-
-Follow these steps:
-
+This can be installed easily with `uv`:
+```bash
+uv tool install git-dumper
 ```
-git clone https://github.com/arthaud/git-dumper.git
-
-cd git-dumper
-
-python -m venv .venv
-
-source venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-**Note:** Whenever you want to run  git-dumper  again in a new terminal session, remember to navigate to the folder and run  `source venv/bin/activate ` first.
 
 ## Usage
 

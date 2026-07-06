@@ -4,9 +4,20 @@ A tool to dump a git repository from a website.
 
 ## Install
 
-This can be installed easily with `uv`:
+This can be installed easily with [`uv`](https://docs.astral.sh/uv/):
 ```bash
 uv tool install git-dumper
+```
+
+Alternatively, you can install it via pip. Note that modern Python environments may require you to use a virtual environment or the --user flag to avoid conflicts:
+```bash
+# Using a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install git-dumper
+
+# OR using the --user flag
+pip install --user git-dumper
 ```
 
 ## Usage

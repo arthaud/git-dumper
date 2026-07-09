@@ -10,9 +10,7 @@ import subprocess
 import sys
 import traceback
 import urllib.parse
-
 import urllib3
-
 import bs4
 import dulwich.index
 import dulwich.objects
@@ -441,12 +439,17 @@ def fetch_git(url, directory, jobs, retry, timeout, http_headers, branches=None,
     url = url.rstrip("/")
 
     # check for /.git/HEAD
-    printf("[-] Testing %s/.git/HEAD ", url)
-    response = session.get(
-        "%s/.git/HEAD" % url,
-        timeout=timeout,
-        allow_redirects=False
-    )
+    try:
+        printf("[-] Testing %s/.git/HEAD ", url)
+        response = session.get(
+            "%s/.git/HEAD" % url,
+            timeout=timeout,
+            allow_redirects=False
+        )
+    except Exception as e:
+        printf("\nerror: Unable to connect to %s. Error: %s\n", url, e)
+        return 1
+
     printf("[%d]\n", response.status_code)
 
     valid, error_message = verify_response(response)

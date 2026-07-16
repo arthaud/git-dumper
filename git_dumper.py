@@ -108,8 +108,6 @@ class GitDumper:
     
 
     def _try_to_connect(self):
-        printf("[!] Force flag used. Ignoring non fatal errors...\n")
-
         try:
             printf("[#] Testing %s/.git/HEAD ", self.args.url)
             self.response = self.session.get(
@@ -122,6 +120,9 @@ class GitDumper:
             sys.exit(1)
 
         printf("[%d]\n", self.response.status_code)
+
+        if self.args.force:
+            printf("[!] Force flag used. Ignoring non fatal errors...\n")
 
 
 

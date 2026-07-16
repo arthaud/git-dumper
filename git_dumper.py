@@ -133,7 +133,7 @@ class GitDumper:
             return
         
         if not valid:
-            printf(error_message, self.args.url, "/.git/HEAD", file=sys.stderr)
+            printf(error_message, self.args.url, ".git/HEAD", file=sys.stderr)
             sys.exit(1)
         
         if not re.match(r"^(ref:.*|[0-9a-f]{40}$)", self.response.text.strip()):
@@ -731,7 +731,7 @@ def verify_response(response: requests.Response):
         "Content-Type" in response.headers
         and "text/html" in response.headers["Content-Type"]
     ):
-        return False, "[-] %s%s responded with HTML\n"
+        return False, "[-] %s/%s responded with HTML\n"
     else:
         return True, True
 

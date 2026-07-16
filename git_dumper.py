@@ -42,7 +42,7 @@ class GitDumper:
         self._try_to_connect()
         self._valid_response()
         self._setup_env_for_proxy()
-        self._try_fast_dump()    # if sucessful, it stops heres
+        self._try_fast_dump()    # if successful, it stops here
         self._fetch_common_files()
         self._discover_references()
         self._fetch_git_packs()
@@ -108,8 +108,10 @@ class GitDumper:
     
 
     def _try_to_connect(self):
+        printf("[!] Force flag used. Ignoring non fatal errors...\n")
+
         try:
-            printf("[-] Testing %s/.git/HEAD ", self.args.url)
+            printf("[#] Testing %s/.git/HEAD ", self.args.url)
             self.response = self.session.get(
                 "%s/.git/HEAD" % self.args.url,
                 timeout = self.args.timeout,
@@ -125,12 +127,15 @@ class GitDumper:
 
     def _valid_response(self):
         valid, error_message = verify_response(self.response)
+
+        if self.args.force:
+            return
         
         if not valid:
             printf(error_message, self.args.url, "/.git/HEAD", file=sys.stderr)
             sys.exit(1)
         
-        elif not re.match(r"^(ref:.*|[0-9a-f]{40}$)", self.response.text.strip()):
+        if not re.match(r"^(ref:.*|[0-9a-f]{40}$)", self.response.text.strip()):
             printf(
                 "error: %s/.git/HEAD is not a git HEAD file\n",
                 self.args.url,
@@ -153,7 +158,7 @@ class GitDumper:
 
 
     def _try_fast_dump(self):
-        printf("[-] Testing %s/.git/ ", self.args.url)
+        printf("[#] Testing %s/.git/ ", self.args.url)
         response = self.session.get("%s/.git/" % self.args.url, allow_redirects=False)
         printf("[%d]\n", response.status_code)
 
@@ -162,28 +167,48 @@ class GitDumper:
             and is_html(response)
             and "HEAD" in get_indexed_files(response)
         ):
-            printf("[-] Fetching .git recursively\n")
+            printf("[#] Fetching .git recursively\n")
             process_tasks(
                 [".git/", ".gitignore"],
                 RecursiveDownloadWorker,
                 self.args.jobs,
-                args=(self.args.url, self.args.directory, self.args.retry, self.args.timeout, self.args.http_headers),
+                args=(
+                    self.args.url, self.args.directory, self.args.retry, self.args.timeout, 
+                    self.args.http_headers, self.args.force
+                ),
             )
 
             os.chdir(self.args.directory)
 
             printf("[-] Sanitizing .git/config\n")
-            sanitize_file(".git/config")
+            self.sanitize_file()
 
             printf("[-] Running git checkout .\n")
             subprocess.check_call(["git", "checkout", "."], env=self.environment)
             
             sys.exit(0)
+    
+
+
+    def sanitize_file(self, filepath=".git/config"):
+        """ Inplace comment out possibly unsafe lines based on regex """
+        if not os.path.isfile(filepath):
+            return
+
+        UNSAFE=r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
+
+        with open(filepath, 'r+') as f:
+            content = f.read()
+            modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
+            if content != modified_content:
+                printf("Warning: '%s' file was altered\n" % filepath)
+                f.seek(0)
+                f.write(modified_content)
 
 
 
     def _fetch_common_files(self):
-        printf("[-] Fetching common files\n")
+        printf("[#] Fetching common files\n")
 
         TASKS = [
             ".gitignore",
@@ -212,14 +237,14 @@ class GitDumper:
             self.args.jobs,
             args=(
                 self.args.url, self.args.directory, self.args.retry, self.args.timeout, self.args.http_headers, 
-                self.args.client_cert_p12, self.args.client_cert_p12_password
+                self.args.force, self.args.client_cert_p12, self.args.client_cert_p12_password,
             ),
         )
 
 
     
     def _discover_references(self):
-        printf("[-] Finding refs/\n")
+        printf("[#] Finding refs/\n")
 
         TASKS = [
             ".git/FETCH_HEAD",
@@ -273,7 +298,7 @@ class GitDumper:
             self.args.jobs,
             args=(
                 self.args.url, self.args.directory, self.args.retry, self.args.timeout, self.args.http_headers, 
-                self.args.client_cert_p12, self.args.client_cert_p12_password
+                self.args.force, self.args.client_cert_p12, self.args.client_cert_p12_password
             ),
         )
 
@@ -322,7 +347,7 @@ class GitDumper:
             self.args.jobs,
             args=(
                 self.args.url, self.args.directory, self.args.retry, self.args.timeout, self.args.http_headers, 
-                self.args.client_cert_p12, self.args.client_cert_p12_password
+                self.args.force, self.args.client_cert_p12, self.args.client_cert_p12_password
             ),
         )
 
@@ -354,7 +379,7 @@ class GitDumper:
             self.args.jobs,
             args=(
                 self.args.url, self.args.directory, self.args.retry, self.args.timeout, self.args.http_headers, 
-                self.args.client_cert_p12, self.args.client_cert_p12_password
+                self.args.force, self.args.client_cert_p12, self.args.client_cert_p12_password
             ),
             tasks_done=packed_objs,
         )
@@ -392,37 +417,40 @@ class GitDumper:
 
     def _parse_staging_area(self, objs: set):
         index_path = os.path.join(self.args.directory, ".git", "index")
-        
+
         if not os.path.exists(index_path):
             return
-        
-        index = dulwich.index.Index(index_path)
-        
-        for entry in index.iterobjects():
-            objs.add(entry[1].decode())
+
+        try:
+            index = dulwich.index.Index(index_path)
+            for entry in index.iterobjects():
+                objs.add(entry[1].decode())
+        except Exception:
+            pass
 
 
 
     def _process_pack_files(self, packed_objs: set, objs: set):
-        # use packs to find more objects to fetch, and objects that are packed
         pack_file_dir = os.path.join(self.args.directory, ".git", "objects", "pack")
 
         if not os.path.isdir(pack_file_dir):
             return
-            
+
         for filename in os.listdir(pack_file_dir):
             if not filename.startswith("pack-") or not filename.endswith(".pack"):
                 continue
             
-            pack_data_path = os.path.join(pack_file_dir, filename)
-            pack_idx_path = os.path.join(pack_file_dir, filename[:-5] + ".idx")
-            pack_data = dulwich.pack.PackData(pack_data_path, object_format=dulwich.object_format.DEFAULT_OBJECT_FORMAT)
-            pack_idx = dulwich.pack.load_pack_index(pack_idx_path, object_format=dulwich.object_format.DEFAULT_OBJECT_FORMAT)
-            pack = dulwich.pack.Pack.from_objects(pack_data, pack_idx)
-            
-            for obj_file in pack.iterobjects():
-                packed_objs.add(obj_file.sha().hexdigest())
-                objs |= set(get_referenced_sha1(obj_file))
+            try:
+                pack_data_path = os.path.join(pack_file_dir, filename)
+                pack_idx_path = os.path.join(pack_file_dir, filename[:-5] + ".idx")
+                pack_data = dulwich.pack.PackData(pack_data_path, ...)
+                pack_idx = dulwich.pack.load_pack_index(pack_idx_path, ...)
+                pack = dulwich.pack.Pack.from_objects(pack_data, pack_idx)
+                for obj_file in pack.iterobjects():
+                    packed_objs.add(obj_file.sha().hexdigest())
+                    objs |= set(get_referenced_sha1(obj_file))
+            except Exception:
+                continue
 
 
 
@@ -430,7 +458,7 @@ class GitDumper:
         # git checkout
         printf("[-] Running git checkout .\n")
         os.chdir(self.args.directory)
-        sanitize_file(".git/config")
+        self.sanitize_file()
 
         # ignore errors
         subprocess.call(
@@ -455,6 +483,7 @@ class Arguments:
     timeout: int
     http_headers: dict[str, str]
     branches: list[str]
+    force: bool
 
 
 
@@ -514,6 +543,10 @@ class Parser:
         self.parser.add_argument(
             "-b", "--branch", dest="branches", action="append",
             help="Additional branch names to check for, e.g. `-b dev -b prod`. The default branches (`main`, `master`, `staging`, `production`, `development`) are always checked.",
+        )
+        self.parser.add_argument(
+            "-F", "--force", action="store_true",
+            help="Ignores any non fatal error",
         )
 
 
@@ -617,6 +650,7 @@ class Parser:
             timeout = self.args.timeout,
             http_headers = self.valid_headers(),
             branches = self.args.branches,
+            force = self.args.force,
         )
 
 
@@ -696,7 +730,7 @@ def verify_response(response: requests.Response):
         "Content-Type" in response.headers
         and "text/html" in response.headers["Content-Type"]
     ):
-        return False, "[-] %s/%s responded with HTML\n"
+        return False, "[-] %s%s responded with HTML\n"
     else:
         return True, True
 
@@ -726,9 +760,11 @@ def get_referenced_sha1(obj_file):
 
         for parent in obj_file.parents:
             objs.append(parent.decode())
+
     elif isinstance(obj_file, dulwich.objects.Tree):
         for item in obj_file.iteritems():
             objs.append(item.sha.decode())
+    
     elif isinstance(obj_file, dulwich.objects.Blob):
         pass
     elif isinstance(obj_file, dulwich.objects.Tag):
@@ -795,20 +831,6 @@ def process_tasks(initial_tasks, worker, jobs, args=(), tasks_done=None):
 
 
 
-def sanitize_file(filepath):
-    """ Inplace comment out possibly unsafe lines based on regex """
-    assert os.path.isfile(filepath), "%s is not a file" % filepath
-
-    UNSAFE=r"^\s*fsmonitor|sshcommand|askpass|editor|pager"
-
-    with open(filepath, 'r+') as f:
-        content = f.read()
-        modified_content = re.sub(UNSAFE, r'# \g<0>', content, flags=re.IGNORECASE)
-        if content != modified_content:
-            printf("Warning: '%s' file was altered\n" % filepath)
-            f.seek(0)
-            f.write(modified_content)
-
 
 
 
@@ -861,10 +883,11 @@ class Worker(multiprocessing.Process):
 class DownloadWorker(Worker):
     """ Download a list of files """
 
-    def init(self, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
+    def init(self, url, directory, retry, timeout, http_headers, force, client_cert_p12=None, client_cert_p12_password=None):
         self.session = requests.Session()
         self.session.verify = False
         self.session.headers = http_headers
+
         if client_cert_p12:
             self.session.mount(url, Pkcs12Adapter(pkcs12_filename=client_cert_p12, pkcs12_password=client_cert_p12_password))
         else:
@@ -872,7 +895,7 @@ class DownloadWorker(Worker):
 
 
 
-    def do_task(self, filepath, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers, force, client_cert_p12=None, client_cert_p12_password=None):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
             return []
@@ -893,7 +916,7 @@ class DownloadWorker(Worker):
             )
 
             valid, error_message = verify_response(response)
-            if not valid:
+            if not valid and force is not True:
                 printf(error_message, url, filepath, file=sys.stderr)
                 return []
 
@@ -914,7 +937,7 @@ class DownloadWorker(Worker):
 class RecursiveDownloadWorker(DownloadWorker):
     """ Download a directory recursively """
 
-    def do_task(self, filepath, url, directory, retry, timeout, http_headers):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers, force):
         if os.path.isfile(os.path.join(directory, filepath)):
             printf("[-] Already downloaded %s/%s\n", url, filepath)
             return []
@@ -950,7 +973,7 @@ class RecursiveDownloadWorker(DownloadWorker):
                 ]
             else:  # file
                 valid, error_message = verify_response(response)
-                if not valid:
+                if not valid and force is not True:
                     printf(error_message, url, filepath, file=sys.stderr)
                     return []
 
@@ -971,7 +994,7 @@ class RecursiveDownloadWorker(DownloadWorker):
 class FindRefsWorker(DownloadWorker):
     """ Find refs/ """
 
-    def do_task(self, filepath, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
+    def do_task(self, filepath, url, directory, retry, timeout, http_headers, force, client_cert_p12=None, client_cert_p12_password=None):
         response = self.session.get(
             "%s/%s" % (url, filepath), allow_redirects=False, timeout=timeout
         )
@@ -980,7 +1003,7 @@ class FindRefsWorker(DownloadWorker):
         )
 
         valid, error_message = verify_response(response)
-        if not valid:
+        if not valid and force is not True:
             printf(error_message, url, filepath, file=sys.stderr)
             return []
 
@@ -1011,7 +1034,7 @@ class FindRefsWorker(DownloadWorker):
 class FindObjectsWorker(DownloadWorker):
     """ Find objects """
 
-    def do_task(self, obj, url, directory, retry, timeout, http_headers, client_cert_p12=None, client_cert_p12_password=None):
+    def do_task(self, obj, url, directory, retry, timeout, http_headers, force, client_cert_p12=None, client_cert_p12_password=None):
         filepath = ".git/objects/%s/%s" % (obj[:2], obj[2:])
 
         if os.path.isfile(os.path.join(directory, filepath)):
@@ -1030,7 +1053,7 @@ class FindObjectsWorker(DownloadWorker):
             )
 
             valid, error_message = verify_response(response)
-            if not valid:
+            if not valid and force is not True:
                 printf(error_message, url, filepath, file=sys.stderr)
                 return []
 

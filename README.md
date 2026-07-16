@@ -28,27 +28,26 @@ usage: git-dumper [options] URL DIR
 Dump a git repository from a website.
 
 positional arguments:
-  URL                   url
-  DIR                   output directory
+  URL                   URL
+  DIR                   Output directory
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
-  --proxy PROXY         use the specified proxy
-  -j JOBS, --jobs JOBS  number of simultaneous requests
-  -r RETRY, --retry RETRY
-                        number of request attempts before giving up
-  -t TIMEOUT, --timeout TIMEOUT
-                        maximum time in seconds before giving up
-  -u USER_AGENT, --user-agent USER_AGENT
-                        user-agent to use for requests
-  -H HEADER, --header HEADER
-                        additional http headers, e.g `NAME=VALUE`
+  --proxy PROXY         Use the specified proxy
   --client-cert-p12 CLIENT_CERT_P12
-                        client certificate in PKCS#12 format
+                        Client certificate in PKCS#12
   --client-cert-p12-password CLIENT_CERT_P12_PASSWORD
-                        password for the client certificate
-  -b BRANCH, --branch BRANCH
-                        additional branch name to check for (repeatable)
+                        Password for the client certificate
+  -j, --jobs JOBS       Number of simultaneous requests
+  -r, --retry RETRY     Number of request attempts before giving up
+  -t, --timeout TIMEOUT
+                        Maximum time in seconds before giving up
+  -u, --user-agent USER_AGENT
+                        User-agent to use for requests
+  -H, --header HEADER   Additional http headers, e.g `NAME=VALUE`
+  -b, --branch BRANCHES
+                        Additional branch names to check for, e.g. `-b dev -b prod`. The default branches (`main`, `master`, `staging`, `production`, `development`) are always checked.
+  -F, --force           Ignore any non fatal error
 ```
 
 ### Example

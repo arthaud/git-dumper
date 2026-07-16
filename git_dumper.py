@@ -546,7 +546,7 @@ class Parser:
         )
         self.parser.add_argument(
             "-F", "--force", action="store_true",
-            help="Ignores any non fatal error",
+            help="Ignore any non fatal error",
         )
 
 

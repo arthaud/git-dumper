@@ -112,7 +112,7 @@ class GitDumper:
         valid, error_msg = verify_response(self.response)
 
         if self.response.status_code >= 400:
-            Display.fatal("Target unreachable. Dumping stoped")
+            Display.fatal("Target unreachable. Dumping stopped")
         
         elif self.response.status_code >= 300:
             Display.warning(f"Redirection required to {self.response.headers['Location']}")
@@ -722,8 +722,14 @@ def get_indexed_files(response: requests.Response):
 
 def verify_response(response: requests.Response) -> tuple[bool, str]:
     Display.response(response)
+
+    if response.status_code >= 400:
+        return False, f"unreachable URL ({response.url}). Responded with code {response.status_code}"
     
-    if (
+    elif response.status_code >= 300 and "Location" in response.headers:
+        return False, f"moved to {response.headers['Location']}. Code {response.status_code}"
+    
+    elif (
         "Content-Length" in response.headers
         and response.headers["Content-Length"] == 0
     ):
